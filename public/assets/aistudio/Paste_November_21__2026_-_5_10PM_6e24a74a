@@ -1,0 +1,2887 @@
+# SENTINEL AI: build prompt 1 (complete security-company site, EN / MN)
+
+You are building **SENTINEL AI**, the website of a security company in Ulaanbaatar that sells AI surveillance, smart access control and zero-trust networks. It has a full set of pages, a small database for what visitors send in, and three source designs merged into one site:
+
+- **Appendix A: "SENTINEL AI" Spline hero.** The home page hero, the fixed navbar, the colour tokens, the font and the two animations.
+- **Appendix B: Facet "Designed in glass" WebGL hero.** A second full-screen section on the home page, re-themed as "Security in glass".
+- **Appendix C: EngineTech footer.** The site footer on every page.
+
+This prompt has two parts:
+
+1. **The master layer** (this part): what the site is, how pages connect, what changes from the three source designs, the data, the languages, and how Mongolian must behave.
+2. **Three source designs** (Appendices A, B, C), pasted verbatim. They define every pixel, timing, easing, colour, 3D value and interaction of the hero, the glass section and the footer.
+
+## Decisions at a glance
+
+| Question | Decision |
+|---|---|
+| Where does the Facet glass hero go? | Home page, **second full-screen section**, directly under the Spline hero (`#glass`). It is not a separate page. |
+| What is it about? | "Security in glass": the glass shards carry the company's principles. The "Read paper" shatter reveals **five security terms** (zero trust, edge inference, access control, audit log, response time). |
+| Where is the EN / MN toggle? | **Desktop (≥1280px):** in the fixed top bar, immediately **left of the "Get Quote" button**. **Below 1280px:** in the top bar, **left of the menu button**. It also appears in the footer's legal line. |
+| Palette | Two colours: charcoal (`#141414`, `#1A1A1A`, card `#292929`, footer black `#000000`, glass `#050507`) and one vivid green `#05E901`. Red appears only for form errors. No third accent. |
+| Fonts | **Sora** (Latin, weights 300 to 700) with **Inter** as the Cyrillic fallback and as the font of the glass section. |
+| Default language | Mongolian. English on request. |
+| 3D products | Three: security camera, access reader, network hub. One GLB slot each in `public/models/`, plus built-in procedural models, so the page never breaks if a file is missing. |
+| Special 404 | "Outside the perimeter." with a radar scan, a real 404 status code and quick links. |
+| Backend | Express + plain PostgreSQL (`pg`) in production, `node:sqlite` locally. Two tables: `contact_messages`, `quote_requests`. No Firebase, no Supabase client SDK. |
+
+## How to read the appendices
+
+- The appendices are law for **layout, sizes, timing, easing, colours, the 3D scene, interactions and responsive behaviour** of the Spline hero, the glass section and the footer. Do not "improve" them. Do not change an easing, a duration, a size or a breakpoint.
+- This master layer wins only where it says so, and only for: brand, copy, data, language, routes, navigation, fonts for Cyrillic, how the code is organised, and the places listed under "Overrides" in the sections below. Every override has a reason (contrast, Cyrillic width, robustness, keyboard use). Apply them exactly; do not add others.
+- Ignore the sentences in the appendices about "plain HTML, CSS and JS", "a single standalone file", "no build step", "an import map" and "three.js from jsDelivr". Here the site is a multi-route React app (see "Stack"). three.js comes from npm, pinned to `0.169.0`, the version Appendix B names.
+- Every visible word comes from the i18n files (see "Language switching"), including the strings the appendices write in English.
+- Real brands and logos never appear. Facet and EngineTech are source-design names only; the words "Facet", "EngineTech", "Columbus, OH" and every sentence about propulsion or material studios must not appear on the site.
+
+## Stack and code quality
+
+- **React 19 + Vite + TypeScript** (`.tsx` / `.ts`), **Tailwind CSS 4** (`@tailwindcss/vite`, tokens in `@theme`), **shadcn/ui** components (Button, Input, Textarea, Label, Checkbox, Sheet), `class-variance-authority`, `clsx`, `tailwind-merge`, `tw-animate-css`, `lucide-react` (icons: Menu, X, ArrowRight, ArrowUpRight, Check), `react-router-dom` 7.
+- **3D:** `@splinetool/react-spline` and `@splinetool/runtime` for the home hero (exact versions from the latest stable at build time, pinned without `^`). `three` pinned to exactly `"0.169.0"` and `@types/three` to `"0.169.0"` for the glass section and the product viewer. Import `RoomEnvironment`, `GLTFLoader`, `DRACOLoader`, `OrbitControls` and `RoundedBoxGeometry` from `three/examples/jsm/...`, and the Meshopt decoder from `three/examples/jsm/libs/meshopt_decoder.module.js`. The Draco decoder path is `https://www.gstatic.com/draco/versioned/decoders/1.5.7/`. The three.js code is loaded with a dynamic `import()` only when its section is near the viewport, so the first page load carries no three.js.
+- **Server:** Express 4 in `server.ts` (run by Node 22.18 or newer, which strips types itself: no TypeScript-only runtime syntax such as enums or parameter properties). `node:sqlite` locally, `pg` through `DATABASE_URL` in production, `zod`, `helmet`, `express-rate-limit`. Dev runs through `tsx`. No Firebase or other backend-as-a-service (see "Database").
+- `package.json`: `"engines": { "node": ">=22.18" }`, a `.node-version` file with `22`, scripts `dev` (`tsx server.ts`), `build` (`vite build`), `start` (`node server.ts`), `typecheck` (`tsc --noEmit`), `check:i18n`, `db:check`, `test` (`node --test`). **Do not add `esbuild` as a dependency** (it conflicts with Vite's optional peer and breaks `npm install` with ERESOLVE). `npm install` must succeed on a clean clone with no flags, and the repository commits `package-lock.json` and no other lock file. `npm run typecheck` must report zero errors. `build` does not run the type check, so a type nit can never block a deploy.
+- The code must read like it was written by a careful human engineer who will hand it to a full-stack team: clear camelCase names, one responsibility per file, short comments only where the reason is not obvious, no leftover prompt wording, no dead code, no `console.log` noise, no `any` (use `unknown` and narrow), no `// @ts-ignore`.
+- No secrets in the client. Every setting comes from environment variables and is listed in `.env.example`.
+
+```
+index.html                      inline language script, fonts, meta, #root
+server.ts                       thin entry: builds the repository, mounts Vite (dev) or dist (prod), listens
+shared/
+  constants.js                  SERVICES, SITE_TYPES, PRODUCT_SLUGS, CONTACT_TOPICS, LEGAL_SLUGS (plain JS, used by client and server)
+  routes.js                     STATIC_ROUTES + isKnownRoute(pathname)
+  schemas.js                    zod schemas contactSchema, quoteSchema (messages are codes such as "required")
+src/
+  main.tsx, App.tsx
+  app/            routes.tsx, ShellLayout.tsx, ScrollAndFocus.tsx, useDocumentMeta.ts
+  components/
+    ui/           button.tsx, input.tsx, textarea.tsx, label.tsx, checkbox.tsx, sheet.tsx (shadcn)
+    shell/        Navbar.tsx, MobileMenu.tsx, LanguageToggle.tsx, SiteFooter.tsx, SkipLink.tsx
+    home/         SplineHero.tsx, GlassSection.tsx, ServicesTeaser.tsx, ProductsTeaser.tsx, ProjectsTeaser.tsx, CtaBand.tsx
+    glass/        GlassStage.tsx, StaticGlass.tsx, engine/ (createGlassHero.ts, cutPattern.ts, pageCanvas.ts, textLayer.ts, shatter.ts, backSliver.ts, springs.ts)
+    products/     ProductViewer.tsx, engine/ (createProductViewer.ts, loadModel.ts, fallbackModels.ts), ProductIllustration.tsx
+    forms/        ContactForm.tsx, QuoteForm.tsx, Field.tsx, useFormSubmit.ts
+  content/        brand.ts, services.ts, products.ts, projects.ts, team.ts
+  i18n/           en.ts, mn.ts, pages.en.ts, pages.mn.ts, index.ts, LocaleProvider.tsx, format.ts
+  pages/          HomePage, ServicesPage, ProductsPage, ProjectsPage, AboutPage, TeamPage, ContactPage, QuotePage, LegalPage, NotFoundPage
+  lib/            cn.ts, device.ts, webgl.ts, storage.ts, url.ts
+  styles/         index.css (tokens, base, keyframes, footer and glass CSS)
+functions/        app.js (createApp), api/{contact,quote,health}.js, repository/{index,sqliteRepo,pgRepo}.js
+db/               schema.postgres.sql, schema.sqlite.sql
+docs/             CONTENT.md, CREDITS.md, DATA.md
+public/           models/ (camera.glb, reader.glb, hub.glb are added by the owner), favicon.svg, robots.txt
+scripts/          check-i18n.mjs, db-check.mjs
+tests/            *.test.mjs
+```
+
+## Routes
+
+| Path | Page | Notes |
+|---|---|---|
+| `/` | Home | Spline hero, glass section, services, products, projects, call to action |
+| `/services` | Services | four services and a four-step process |
+| `/products` and `/products/:slug` | Products | one 3D viewer, three products; `:slug` is one of `camera`, `reader`, `hub`; `/products` shows the first product and selecting one navigates to `/products/<slug>` with `replace` |
+| `/projects` | Projects | six case studies |
+| `/about` | About us | story, values, four numbers |
+| `/team` | Team | four people with monogram avatars |
+| `/contact` | Contact | form + contact details; `?topic=` pre-selects the topic |
+| `/quote` | Get a quote | form; `?service=` and `?product=` pre-select |
+| `/legal/:slug` | Legal | `privacy`, `terms`, `cookies` |
+| `*` | Not found | the themed 404 (see "Themed 404") |
+
+The navbar's "Services, Products, Projects, About Us, Team, Contacts" go to the matching routes. "Get Quote" goes to `/quote`. The hero's "Book a Call" goes to `/contact?topic=call` and "Our Work" to `/projects`. An unknown product or legal slug renders the 404 page.
+
+## Tokens
+
+All colours are HSL custom properties on `:root` (dark only, no light mode), mapped in Tailwind 4 through `@theme inline` with `--color-x: hsl(var(--x))`, so utilities such as `bg-hero-bg`, `text-muted-foreground` and `bg-nav-button/80` work. Keep every token and the two keyframes from Appendix A, with the exact names. Add only the tokens in the last four rows.
+
+| Token | HSL | Hex | Use |
+|---|---|---|---|
+| `--background` | 0 0% 10% | `#1A1A1A` | page |
+| `--hero-bg` | 0 0% 8% | `#141414` | hero, the page behind everything |
+| `--foreground` | 0 0% 96% | `#F5F5F5` | text |
+| `--muted-foreground` | 0 0% 60% | `#999999` | secondary text |
+| `--primary` / `--accent` / `--ring` | 119 99% 46% | `#05E901` | the one accent |
+| `--primary-foreground` / `--accent-foreground` | 0 0% 4% | `#0A0A0A` | text on green |
+| `--secondary` / `--nav-button` | 0 0% 18% | `#2E2E2E` | buttons |
+| `--muted` | 0 0% 16% | `#292929` | |
+| `--border` / `--input` | 0 0% 20% | `#333333` | decorative borders |
+| `--destructive` | **0 84% 68%** | `#F26969` | override: the source's 60% gives only 3.85:1 on cards |
+| `--card` (new) | 0 0% 16% | `#292929` | cards |
+| `--field-border` (new) | 0 0% 45% | `#737373` | border of form controls (3.9:1 on `#141414`) |
+| `--glass-bg` (new) | 240 17% 2% | `#050507` | glass section background |
+| `--footer-bg` (new) | 0 0% 0% | `#000000` | footer |
+
+Measured contrast (WCAG ratio), the rule is **every text is at least 4.5:1**:
+
+| Text | On | Ratio |
+|---|---|---|
+| foreground `#F5F5F5` | `#141414` / `#1A1A1A` / card `#292929` / `#000` / glass `#050507` | 16.9 / 15.96 / 13.34 / 19.26 / 18.68 |
+| muted `#999999` | `#141414` / `#1A1A1A` / card / `#000` / glass | 6.47 / 6.11 / 5.11 / 7.37 / 7.15 |
+| muted `#999999` | `#2E2E2E` (nav button) | 4.77 |
+| green `#05E901` | `#141414` / `#1A1A1A` / card / `#000` / glass | 11.11 / 10.49 / 8.77 / 12.66 / 12.28 |
+| near-black `#0A0A0A` | green | 11.94 |
+| destructive `#F26969` | `#141414` / card / `#2E2E2E` | 6.14 / 4.85 / 4.53 |
+| white at 0.55 / 0.60 / 0.72 | `#050507` / `#050507` / `#000` | 6.22 / 7.33 / 10.59 |
+| **white at 0.38 and 0.34 (Appendix B) fail** | `#050507` | 3.45 / 2.96 |
+
+Consequences, apply them:
+
+- Never use `text-muted-foreground/60` or any text opacity below the full muted colour. The hero trust line (`muted-foreground/60`, 3.11:1) becomes plain `text-muted-foreground`.
+- In the glass section no text is dimmer than white at 0.55 (see "Overrides to Appendix B").
+- The footer legal line uses white at 0.6 and 12px (Appendix C writes 0.52 and 9px).
+- Form controls use `border: 1px solid hsl(var(--field-border))` (3:1 against their background is required for the control boundary); hover `hsl(0 0% 60%)`; focus the green ring.
+- Focus is always visible: `:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; }` for every link, button, input and the product viewer. Never `outline: none` without a replacement.
+- Green on white or white on green is forbidden; green text sits on charcoal or black only, black text sits on green only.
+
+**Stacking order (z-index):** page 0, hero scrims 1, hero content 10, footer 10, navbar 50, menu sheet overlay and content 60, skip link 70. The footer's `z-index: 100` in Appendix C becomes 10, otherwise it would paint over the menu sheet.
+
+**Reduced motion:** the Appendix A classes start at `opacity-0` and rely on an animation. Add this to the global CSS so nobody is left with invisible text:
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up, .animate-fade-in { animation: none !important; opacity: 1 !important; transform: none !important; filter: none !important; }
+  *, *::before, *::after { scroll-behavior: auto !important; }
+}
+```
+
+The footer dots (`footerDotsMove`), the 404 radar sweep and the product viewer's auto-rotation also stop under `prefers-reduced-motion: reduce`.
+
+## Fonts
+
+`index.html` loads, with `display=swap`:
+
+```html
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Inter:wght@300..700&display=swap" rel="stylesheet">
+```
+
+- `--font-sora: "Sora", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;` and `body { @apply font-sora antialiased; }`. **Sora has no Cyrillic**, so every Mongolian glyph falls back to Inter automatically. That is intended: do not add a third font.
+- The glass section uses `"Inter", "Sora", sans-serif` (Appendix B names Inter).
+- Appendix C asks for Geist: use the Sora stack instead (Geist is not loaded). Its weights become: the footer H2 `font-weight: 300` (Sora's lightest; the source's 220 does not exist), the wordmark and the brand mark text `700` (Sora's heaviest; the source's 760 does not exist), nav links `600`.
+- Mongolian text: `[lang="mn"]` reduces negative tracking. Any `tracking-tight` or `-0.05em` heading gets `letter-spacing: -0.02em` in Mongolian, because Inter's Cyrillic glyphs are wider than Sora's Latin ones and tight tracking makes letters touch. The uppercase wordmark "SENTINEL AI" is Latin and keeps its tracking.
+- Before the glass section draws its canvas text, wait for the font: `await document.fonts.load('500 16px Inter', 'Өө Үү абв')` and `await document.fonts.load('500 16px Inter', 'Security')`, then draw. Without it the canvas would use a system font for Cyrillic.
+
+## Language switching (EN / MN)
+
+- Default language is **Mongolian**. Remember the choice in `localStorage` under `sentinel.lang` (always inside try/catch) and honour `?lang=en|mn`. Update `<html lang>` and `document.title` on every switch.
+- `index.html` has this inline script in `<head>`, before any CSS, so the first paint already has the right `lang` (and `[lang="mn"]` rules apply immediately). The static `<html lang="mn">` is the default.
+
+```html
+<script>
+  (function () {
+    var lang = 'mn';
+    try {
+      var query = new URLSearchParams(location.search).get('lang');
+      var saved = null;
+      try { saved = localStorage.getItem('sentinel.lang'); } catch (e) {}
+      lang = query === 'en' || query === 'mn' ? query : saved === 'en' || saved === 'mn' ? saved : 'mn';
+    } catch (e) {}
+    document.documentElement.lang = lang;
+  })();
+</script>
+```
+
+- `LocaleProvider` exposes `{ locale, t, setLocale }`. `t` is the typed message object of the active language (`t.hero.sub`). Switching is instant and **does not reload the page, change the route, restart the Spline scene, reset the 3D product, or move the glass shards**; the glass section redraws its printed text in place (see Appendix B overrides).
+- Messages live in `src/i18n/en.ts`, `mn.ts`, `pages.en.ts`, `pages.mn.ts`. `en` is the source of the type: `type Messages = DeepStrings<typeof en>` with `type DeepStrings<T> = T extends string ? string : T extends readonly (infer U)[] ? DeepStrings<U>[] : { [K in keyof T]: DeepStrings<T[K]> }`, and `mn` is declared `: Messages`, so a missing key is a compile error.
+- `npm run check:i18n` (imports the `.ts` files directly) flattens both trees (arrays by index) and fails when: key sets differ; a Mongolian value contains no Cyrillic letter (allowed: values that contain no letters at all once `{placeholders}`, digits, punctuation, `©`, the brand `SENTINEL AI` and product codes are removed, such as `12`, `24/7` or `© {year} SENTINEL AI`; and URLs and e-mail addresses); a value is `""`; a Mongolian value has more than 2.2 times the characters of its English value and is longer than 60 characters (a sign that it was not translated concisely); or a `{placeholder}` exists in one language and not the other.
+- Brand name, product names and codes (`Sentinel Eye SE-4`, `Sentinel Gate SG-2`, `Sentinel Core SC-8`; they live in `src/content/products.ts`, not in the i18n files) and the phone number are never translated. The names of the two languages on the toggle (`English`, `Монгол`) are fixed constants in `LanguageToggle`, because a language is always named in itself.
+- Lists that run in parallel with a constant list (`SERVICES`, `PRODUCT_SLUGS`) are arrays in the same order as that constant; list entries never carry a `key` field. The machine keys (`surveillance`, `camera`, `general`) appear only as property names in `form.topics`, `form.services` and `form.siteTypes`.
+
+## Mongolian must never break the layout (most important rule)
+
+Mongolian strings are usually 20 to 40 percent longer than English, use Ө ө Ү ү, and uppercase Cyrillic with wide tracking is much wider than uppercase Latin. For every text element:
+
+- No fixed widths on text. Use `min-w-0`, `max-w-*` and `clamp()`. Single-line labels get `whitespace-nowrap` plus `truncate` and a `title`; running text wraps with `overflow-wrap: anywhere`. Headings use `text-wrap: balance`. Never `overflow: hidden` on a heading.
+- In Mongolian, every uppercase label with tracking of `.1em` or more uses `.06em` (`[lang="mn"]`), and navbar labels are 13px.
+- **Navbar:** measured in Sora/Inter, the six labels plus gaps need 563px in English and 642px in Mongolian (13px, uppercase, `.1em` / `.06em`, `gap-6`). With the logo, toggle, button and `px-16` padding the desktop row needs 1,200px, so the desktop navbar starts at **1280px** (`--breakpoint-nav: 80rem`, utility `nav:`), not at Tailwind's `md`. Below it the hamburger shows. At 1280px the row must not wrap or overflow in either language.
+- **Buttons** are `whitespace-nowrap` with horizontal padding, never a fixed width. The hero buttons wrap onto two lines of buttons (`flex-wrap`), not inside a button.
+- **Cards:** the grid uses `grid-cols-[repeat(auto-fit,minmax(min(100%,17rem),1fr))]`; card titles may wrap to three lines; no `line-clamp` on body text. Specs and tags wrap (`flex-wrap`).
+- **Hero heading:** "SENTINEL AI" may wrap to two lines on a 320px phone ("SENTINEL" / "AI"); that is accepted.
+- **Glass section and footer:** see their own sections; both were measured against Mongolian.
+- Verify, in **both languages**, at 320, 360, 390, 414, 600, 768, 820, 1024, 1100, 1279, 1280, 1440 and 1920 px wide, and at 1366 × 620, 1366 × 700 and 1440 × 900: no horizontal scroll, no clipped or overlapping text, no button text outside its button, and on every page. Fix the cause in CSS, not by shrinking fonts below the sizes in this prompt.
+
+## Shared shell (around every page)
+
+`ShellLayout` renders, in this order: `SkipLink`, `Navbar`, `<main id="main" tabIndex={-1} className="focus:outline-none">`, `SiteFooter`. The page background is `bg-hero-bg`.
+
+### Skip link, route changes and document meta
+
+- `SkipLink` is the first focusable element: "Skip to content" (`#main`), visually hidden until focused, then a green pill at the top left (`z-70`).
+- `ScrollAndFocus`: when `pathname` changes, scroll to the top (or to the element named by `location.hash`, if it exists after render), then move focus to `#main` with `preventScroll: true`. Do not do this on the first load, and do not do it when the path moves between `/products` and `/products/:slug` (the viewer must not jump).
+- `useDocumentMeta(titleKey, descriptionKey?)` sets `document.title` (`"<page> | SENTINEL AI"`; the home page uses `t.meta.titleHome`), the meta description, and removes anything it added on unmount. The 404 page adds `<meta name="robots" content="noindex">`.
+
+### Navbar (Appendix A, with these overrides)
+
+- Same structure and classes as Appendix A: fixed, transparent over the hero, `px-8 lg:px-16 py-5`, logo text "SENTINEL" (`text-xl font-semibold tracking-tight`, a link to `/` with `aria-label="SENTINEL AI, home"`), centre links, right-hand button.
+- **Links (six):** Services, Products, Projects, About Us, Team, Contacts. Style from Appendix A (`text-muted-foreground hover:text-foreground uppercase transition-colors`) with `text-[13px]` and `tracking-[0.1em]` (`[lang="mn"]`: `0.06em`), `gap-6`. They are `<NavLink>`s inside `<nav aria-label>`. The current page's link is `text-foreground` with a 2px green underline (`underline decoration-primary decoration-2 underline-offset-[10px]`) and `aria-current="page"`. Each link is at least 44px tall (`inline-flex min-h-11 items-center`).
+- **Breakpoint:** the links, the toggle and the button show from **1280px** (`nav:`), see "Mongolian must never break the layout". Below it they hide, and the hamburger shows. Appendix A's "no hamburger menu on mobile" is overridden, because six links and a language switch cannot disappear on a phone.
+- **Right side, desktop:** `LanguageToggle` then the "Get Quote" button (`navCta` variant from Appendix A, `rounded-lg uppercase text-xs tracking-widest px-6`, a link to `/quote`), `gap-3`. The toggle is immediately to the left of the button.
+- **Right side, below 1280px:** `LanguageToggle` then a 44 × 44px menu button (`Menu` icon, `aria-label`, `aria-expanded`, `aria-controls="mobile-menu"`), `gap-2`. The button has the same look as `navCta` (`bg-nav-button`).
+- **Scroll state:** at `scrollY > 8` the bar gets `bg-hero-bg/85 backdrop-blur-md border-b border-border/60` (transition 200ms). At the top it stays transparent as in Appendix A. Over the hero, a top scrim keeps the links readable on any frame of the 3D scene: a `before:` layer `absolute inset-x-0 top-0 -z-10 h-[120px] bg-gradient-to-b from-black/60 to-transparent pointer-events-none`, removed when the bar has a background.
+
+### `LanguageToggle`
+
+- A pill with two buttons "EN" and "MN" inside `role="group"` with an `aria-label`. Each button: `lang="en"` / `lang="mn"`, `aria-pressed`, `aria-label="English"` / `"Монгол"`, text `text-xs font-semibold tracking-widest`. Visible pill height 32px; the hit area of each button is extended to 44px with an `::after` (`inset-y-[-6px]`), so the bar does not grow.
+- Inactive: `text-muted-foreground`; active: `bg-nav-button text-foreground` with a 2px green bottom line. Focus ring as in "Tokens".
+- The same component appears in the footer's legal line (compact variant) and in the mobile menu (full-width variant).
+
+### `MobileMenu`
+
+- shadcn `Sheet` from the right: `w-[min(92vw,22rem)] bg-hero-bg border-l border-border z-60`. Radix provides the focus trap, Escape, `aria-modal`, scroll lock and focus return; `html { scrollbar-gutter: stable; }` stops the page shifting sideways when the scrollbar disappears. Give the sheet a visually hidden `SheetTitle` ("Menu") and `SheetDescription` so Radix does not warn.
+- `id="mobile-menu"`. Header: "SENTINEL" and a 44px close button. Body: the six links as large rows (`text-2xl font-light`, `py-3`, `border-b border-border`, uppercase off, `whitespace-normal`), then a full-width green "Get Quote" button, then the full-width toggle with the label "Language", then the phone number as a `tel:` link.
+- Close it when a link is tapped and when `pathname` changes (browser Back must not leave it open).
+
+## Home page (`/`)
+
+Sections in this order. Container for every section after the heroes: `mx-auto w-full max-w-7xl px-6 md:px-10 lg:px-16`, vertical padding `py-20 md:py-28`.
+
+1. **Spline hero** (`SplineHero`, Appendix A).
+2. **Glass section** (`GlassSection`, Appendix B, `id="glass"`).
+3. **Services** on `bg-background`: eyebrow, `h2`, one lead sentence, four cards (card background `bg-card`, `border border-border`, `rounded-lg p-6`, hover border `border-primary/60`), each a link to `/services#<key>`. A "View all services" link.
+4. **Products** on `bg-hero-bg`: three cards, each with its `ProductIllustration` (an inline SVG, no WebGL on the home page), the name, one line, a link to `/products/<slug>`.
+5. **Projects** on `bg-background`: the first three case studies as cards, then "All projects".
+6. **Call to action band** on `bg-hero-bg`: one `bg-card` panel with an `h2`, one sentence, and two buttons ("Get a quote" green, "Call 9007 0740" white, a `tel:` link).
+
+The page has exactly one `h1` (the hero's "SENTINEL AI"); every other section title is an `h2`, card titles `h3`.
+
+### Overrides to Appendix A (Spline hero and navbar)
+
+1. **Copy** comes from `t.hero.*`. The trust line "Columbus, OH" becomes "Ulaanbaatar": EN `Trusted security partner. Ulaanbaatar. 12 systems deployed.`
+2. **Buttons** are links, not `<button>`s: "Book a Call" is `<Link to="/contact?topic=call">`, "Our Work" is `<Link to="/projects">`. Keep every class from Appendix A (`pointer-events-auto`, sizes, hover, active scale). The parent keeps `pointer-events-none`.
+3. **Trust line** loses the `/60`: `text-muted-foreground text-xs font-light` (3.11:1 becomes 6.47:1). `text-xs` (12px) stays.
+4. **Heights:** `min-h-screen` becomes `min-h-[100svh]` so a phone's address bar does not cut the hero.
+5. **Scrims** (contrast over a scene that changes every frame). Keep the source's `bg-black/30` layer and add above it, also `z-[1] pointer-events-none`: `bg-[radial-gradient(ellipse_at_bottom_left,rgba(10,10,10,.78),rgba(10,10,10,.35)_45%,transparent_72%)]`. Acceptance: take a screenshot at 1440 × 900 and 390 × 844, sample the pixels behind the description paragraph and the trust line; every sample must give at least 4.5:1 against `#999999`. If one does not, raise the first stop's opacity.
+6. **Robustness of the 3D scene** (`SplineHero.tsx`):
+   - `React.lazy` + `Suspense` + an `ErrorBoundary` whose fallback is the static backdrop below (a failed chunk or a Spline render error must never blank the page).
+   - **Gate:** do not load Spline automatically when `navigator.connection?.saveData`, `navigator.deviceMemory <= 4`, `navigator.hardwareConcurrency <= 2` or `prefers-reduced-motion: reduce`. Show the static backdrop and a small outline button "Load 3D background" (`pointer-events-auto absolute bottom-10 right-6 md:right-10`, `text-sm`, 44px tall). Unknown values (Safari has no `deviceMemory`) count as capable.
+   - **Stall:** if Spline's `onLoad` has not fired after 25 seconds, show the static backdrop and a "Retry 3D" button that remounts the component (`key` + 1).
+   - **Pause offscreen:** an `IntersectionObserver` on the section (`threshold: 0.05`) calls `splineApp.stop()` when the hero has left the screen and `splineApp.play()` when it returns; also stop when `document.hidden`. Call both methods through optional chaining inside try/catch (they are not present in every runtime version).
+   - **Static backdrop:** `bg-hero-bg` plus a faint green glow `bg-[radial-gradient(60%_60%_at_70%_40%,hsl(119_99%_46%/0.10),transparent)]`.
+7. **Navbar:** see "Shared shell". The source's `href="#section"` links become routes.
+
+## Glass section on the home page
+
+The Facet design is kept as one full-screen section (`<section id="glass" aria-labelledby="glass-title" class="relative h-[100svh] min-h-[600px] overflow-hidden bg-glass-bg">`). It has two modes:
+
+- **WebGL mode** (`GlassStage`): Appendix B built as specified, with the overrides below.
+- **Static mode** (`StaticGlass`): everything else.
+
+**Mode rule** (`useGlassMode`, evaluated on mount and on `change` of the media queries): WebGL only when **all** of these hold: viewport at least 900px wide; `(hover: hover) and (pointer: fine)`; not `prefers-reduced-motion`; not a weak device (the same test as the Spline gate); a WebGL context can be created (`lib/webgl.ts` tries `canvas.getContext('webgl2') || canvas.getContext('webgl')` once and caches the result); and the engine has not reported a failure. Everything else gets static mode. Phones and tablets with a touch screen therefore get the static version; do not try to run the shatter on touch.
+
+### Static mode (`StaticGlass`)
+
+The same section, the same words, the same colours, no WebGL:
+
+- A panel `mx-auto max-w-6xl`, with the five cut cells drawn as an inline `<svg aria-hidden>` behind the copy: five `<polygon>`s from the **same normalised cut coordinates** as the 3D version (`cutPattern.ts`, static `time = 0`, transposed when the panel is portrait), `fill` a linear gradient `#1C1C21` to `#121215`, `stroke="#050507" stroke-width="10"` for the gaps and a second pass `stroke="rgba(255,255,255,.16)" stroke-width="1"` for the rims (`vector-effect: non-scaling-stroke`, `preserveAspectRatio="none"`).
+- Copy over it in normal flow, left aligned, in this order: eyebrow, `h2#glass-title` (two lines, `text-[clamp(2.75rem,9vw,6rem)]`, Inter 500, `tracking-[-0.045em]` and `-0.02em` in Mongolian, the same `#dcdce0` to `#bdbdc3` gradient as `bg-clip-text`), sub, the "See the system" pill (`#E8E8EC` background, dark text; hover `#05E901`), and the "Read the principles →" button.
+- The button toggles the five terms **in place** (`aria-expanded`, `aria-controls="glass-terms"`): the shards fade to 25% opacity and a two-column list (one column below 640px) appears with the title and the five definitions, with a "← Back" button that closes it and returns focus to the "Read" button. Transition 250ms, none under reduced motion.
+- Text sizes follow "Overrides to Appendix B" (item 3): nothing below 14px except the eyebrow (11px) and the corner labels (12px).
+
+### Overrides to Appendix B (Facet glass hero)
+
+1. **Copy and re-theme.** Every Facet string is replaced; English values below, Mongolian values in `src/i18n/mn.ts`.
+
+| Source | Sentinel (EN) |
+|---|---|
+| eyebrow "REAL-TIME MATERIAL STUDIO" | `SECURITY BY DESIGN` |
+| headline "Designed / in glass." | `Security` / `in glass.` (MN: `Хамгаалалт` / `шилэн дотор.`) |
+| sub "Author dispersion, transmission, and refraction in the browser. Live previews, real materials." | `See every door, camera and login in one live view. Clear by design, strong by default.` |
+| pill "Open studio" | `See the system` (link to `/products`) |
+| link "Read paper →" | `Read the principles →` |
+| corner "© Facet Lab" | `© {year} SENTINEL AI` |
+| corner "KHR_materials_dispersion" | `Zero-trust architecture` |
+| nav mark + "Facet" | the square mark + `SENTINEL AI` |
+| nav links "Studio · Materials · Pricing" | `Services · Products · Projects` (routes `/services`, `/products`, `/projects`) |
+| nav "Sign in" | `Get a quote` (route `/quote`) |
+| definitions title "Real-time glass, in five terms." | `Security, in five terms.` |
+| five terms (Iridescence, Index of refraction, Dispersion, Transmission, Roughness) | `Zero trust`, `Edge inference`, `Access control`, `Audit log`, `Response time` |
+| "← Back" | `← Back` (MN `← Буцах`) |
+
+2. **Colours.** The cursor glow `vec3(.42,.37,.62)` becomes `vec3(.10,.62,.16)` (same `· .16 · exp(−1.6·(d/300S)²)`), the "Back" hover `#b9abff` becomes `#05E901`, and the pill hover `#36d67e` becomes `#05E901` with `#0A0A0A` text (11.94:1). The glass colours, the iridescence (it gives the green and violet sheen), the headline gradient, the `#050507` background and the 5 % / 8.5 % margins stay.
+3. **Text sizes and contrast** (Appendix B's sizes scale with the page, so they fall below readable at 1280px wide; its dimmest texts also fail contrast). Every size below is `max(floor, source size)`:
+   - eyebrow: floor 11px, white at **0.55** (source 0.38, 3.45:1);
+   - sub: floor 14px, white at 0.55 (6.22:1);
+   - pill label, "Read the principles →", nav slab links and the nav slab's right label: floor 14px (links white at 0.60);
+   - corner labels: floor 12px, white at **0.55** (source 0.34, 2.96:1);
+   - five-terms title: floor 16px; definitions: `max(13px, .73vw)` with the source's 1.72 line height; "← Back": `max(14px, .66vw)`.
+   - The headline is not changed. The drawn pill and link keep their source geometry, but their DOM hit areas are at least **44 × 44px**, centred on the drawn shape.
+4. **Position under the fixed navbar.** The block's top margin is `max(8.5 % of the section height, 88px)`; bottom margin stays 8.5 %. The layout scale `S = blockWidth / 1730` is computed after the margins.
+5. **Mongolian fit** (measured with Inter 500, `-.045em`): "Хамгаалалт" is 5.337em wide, "шилэн дотор." 6.128em, "Security" 3.635em, "in glass." 3.535em. At the source size (7.8 % of the panel width) the widest Mongolian line is 47.8 % of the panel width, so the headline fits and is never re-wrapped: the two lines are exactly as given. The sub is wrapped by `pageCanvas` to at most 46 % of the panel width: two lines in English, up to three in Mongolian; the pill and link are stacked **below the measured sub**, the eyebrow and the headline keep their source positions. Measure with the real font after `document.fonts.load` (see "Fonts").
+6. **Pointer scope.** Listen for the pointer on the section, not on `window`, and ease the tilt back when the pointer leaves the section. Set `touch-action: pan-y` on the canvas and never handle `wheel`: the page must always scroll normally over the glass.
+7. **Keyboard and screen readers.** The transparent DOM text layer is rendered by React (so language changes and `<Link>` navigation work) and moved by the engine with a ref (`element.style.transform = matrix3d(...)`, never per-frame React state). It contains real text in the right order: nav links, `h2#glass-title`, sub, pill link, the "Read the principles" `<button aria-expanded aria-controls="glass-terms">`, the corner labels. Focus rings are drawn in the layer (2px green outline), so they follow the tilt. When the page is shattered: the page layer gets `inert` and `visibility: hidden`, the definitions view (`<section id="glass-terms" aria-labelledby>`) becomes visible, focus moves to its title (`tabIndex={-1}`), the real "← Back" `<button>` is focusable, and `Escape` also goes back. When assembled again: the definitions view is `inert` and hidden, and focus returns to the "Read the principles" button. Tab never reaches an invisible control.
+8. **Language change in place.** `engine.setCopy(copy)` redraws the page canvas texture (after the font is ready) and re-reads the measured sub; the tilt, the hover lift and the shatter state do not change. The DOM layer re-renders through React.
+9. **Lifecycle and robustness.** The same rules as the product viewer and the Spline hero:
+   - StrictMode-safe: the effect creates a **fresh `<canvas>`** on every mount, guards the async start with a `cancelled` flag, and its cleanup removes listeners, cancels the animation frame, disposes geometries, materials, the page texture, the PMREM target and the renderer, and removes the canvas. **Never call `forceContextLoss()`** (it kills the context the second StrictMode mount needs).
+   - Create the engine when the section is within one viewport height of the screen (`IntersectionObserver`, `rootMargin: '100% 0px'`), import three.js and the engine dynamically at that moment, pause the loop while the section is completely off screen or `document.hidden`, and dispose after 3 seconds when it is more than two viewports away. Coming back re-creates it (with the fly-in from Appendix B).
+   - `renderer.setPixelRatio(Math.min(devicePixelRatio, 2))` is re-read on `resize`.
+   - `webglcontextlost`: `preventDefault()`, switch to static mode and say nothing. `webglcontextrestored` after a loss: if the section is near the screen, rebuild once.
+   - An error thrown while creating the engine, or no first frame within 8 seconds, calls `onFail` and the section switches to static mode.
+10. **Reduced motion and no WebGL** use the static mode above (Appendix B's own "static styled HTML version" is that component).
+
+### `cutPattern.ts` (reference implementation of Appendix B's cut pattern)
+
+Keep this pure and tested: the five cells must always tile the unit square. Write it like this (names may change, behaviour not):
+
+```ts
+export type Pt = readonly [number, number];
+export type CellName = 'A' | 'B' | 'C' | 'D' | 'E';
+export type Cells = Record<CellName, Pt[]>;
+
+const TOP = [0.22, 0.515, 0.84] as const;   // tAB, tBC, tCE
+const BOTTOM = [0.34, 0.865] as const;       // bAD, bDE
+const JUNCTIONS: readonly Pt[] = [[0.385, 0.72], [0.48, 0.62], [0.716, 0.49]];
+
+const wave = (index: number, t: number, amplitude: number, axis: number): number =>
+  amplitude * Math.sin((t / (10 + ((index * 3.7 + axis * 2.3) % 10))) * Math.PI * 2 + index * 1.7 + axis * 0.9);
+
+const push = (p: Pt, pointer: Pt | null, axisOnly?: 0 | 1): Pt => {
+  if (!pointer) return p;
+  const dx = p[0] - pointer[0];
+  const dy = p[1] - pointer[1];
+  const d = Math.hypot(dx, dy);
+  if (d >= 0.6 || d === 0) return p;
+  const k = (0.05 * (1 - d / 0.6)) / d;
+  return [p[0] + (axisOnly === 1 ? 0 : dx * k), p[1] + (axisOnly === 0 ? 0 : dy * k)];
+};
+
+/** Cells in panel-normalised coordinates (x right, y down). `portrait` transposes so the hero cell sits on top. */
+export function buildCells(time: number, pointer: Pt | null, portrait: boolean): Cells {
+  const top = TOP.map((x, i) => push([x + wave(i, time, 0.03, 0), 0], pointer, 0));
+  const bottom = BOTTOM.map((x, i) => push([x + wave(i + 3, time, 0.03, 0), 1], pointer, 0));
+  const j = JUNCTIONS.map(([x, y], i) =>
+    push([x + wave(i + 5, time, 0.03, 0), y + wave(i + 5, time, 0.05, 1)], pointer));
+  const [tAB, tBC, tCE] = top;
+  const [bAD, bDE] = bottom;
+  const [J0, J1, J2] = j;
+  const TL: Pt = [0, 0], TR: Pt = [1, 0], BL: Pt = [0, 1], BR: Pt = [1, 1];
+  const cells: Cells = {
+    A: [TL, tAB, J0, bAD, BL],
+    B: [tAB, tBC, J1, J0],
+    C: [tBC, tCE, J2, J1],
+    D: [J0, J1, J2, bDE, bAD],
+    E: [tCE, TR, BR, bDE, J2],
+  };
+  if (!portrait) return cells;
+  const swap = (poly: Pt[]): Pt[] => poly.map(([x, y]): Pt => [y, x]);
+  return { A: swap(cells.A), B: swap(cells.B), C: swap(cells.C), D: swap(cells.D), E: swap(cells.E) };
+}
+```
+
+`tests/cutPattern.test.mjs` imports it and checks, for `time` in 0 to 60 s in steps of 1.7 s and for pointers at `null`, the four corners and the centre: all five cells have positive area, no cell is self-intersecting, no vertex leaves `[0,1]`, and the five areas add up to the area of the unit square within `1e-9`.
+
+## Pages
+
+Every inner page starts with the same `PageHeader`: `pt-32 pb-12 md:pb-16`, an eyebrow (`text-xs uppercase tracking-widest text-primary`, MN `.06em`), the `h1` (`text-[clamp(2.25rem,5vw,4rem)] font-bold leading-[1.05] tracking-[-0.03em]`, MN `-0.02em`, `text-wrap: balance`), and a lead (`text-muted-foreground text-lg font-light max-w-2xl`). Content sits in `mx-auto w-full max-w-7xl px-6 md:px-10 lg:px-16`. Backgrounds alternate `bg-hero-bg` and `bg-background`. Cards are `bg-card border border-border rounded-lg p-6`. Buttons are the shadcn `Button` with the variants from Appendix A (`navCta`, `hero`, `heroOutline`) plus `primary` (green, black text, `hover:brightness-110 active:scale-[0.97]`) and `light` (white, `#1A1A1A` text, `hover:brightness-90`).
+
+### `/services`
+
+Four services in this order (`key` is the `id` of the section and the value stored by the quote form): `surveillance` (AI surveillance), `access` (smart access control), `network` (zero-trust network), `audit` (security audit and training). Each is a row: title, a paragraph, a list of four points (each with a green `Check` icon), and a "Get a quote for this" link to `/quote?service=<key>`. Below them, "How we work": four numbered steps in a grid (Assess, Design, Install, Monitor), numbers `01` to `04` in green.
+
+### `/products` and `/products/:slug`
+
+One 3D viewer and three products. Desktop: two columns (`lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]`), viewer left, details right; below `lg` the viewer is first.
+
+- **Product switcher:** `<nav aria-label>` with three links (`<NavLink to="/products/camera">` and so on, `aria-current="page"` on the active one, `replace` navigation). Each link shows the product name and its code (`SE-4`, `SG-2`, `SC-8`). It wraps to two lines on narrow screens.
+- **Details:** `h2` with the product name (from `products.ts`), the tagline, a paragraph, a `<dl>` of five specs (label in `text-muted-foreground`, value in `text-foreground`, rows separated by `border-b border-border`), and two buttons: "Request a quote" (green, `/quote?product=<slug>&service=<service>`) and "Contact an engineer" (`heroOutline`, `/contact`).
+- `/products` renders the first product. An unknown slug renders the 404 page.
+- Product data in `src/content/products.ts`:
+
+```ts
+export const products = [
+  { slug: 'camera', name: 'Sentinel Eye',  code: 'SE-4', service: 'surveillance', model: '/models/camera.glb' },
+  { slug: 'reader', name: 'Sentinel Gate', code: 'SG-2', service: 'access',       model: '/models/reader.glb' },
+  { slug: 'hub',    name: 'Sentinel Core', code: 'SC-8', service: 'network',      model: '/models/hub.glb' },
+] as const;
+```
+
+A product may also carry an optional `credit` string (author and licence of a CC BY or CC BY-SA model, for example `"Model: Name, CC BY 4.0"`). When set, the viewer shows it under the frame in `text-sm text-muted-foreground`.
+
+#### The 3D viewer (`ProductViewer`)
+
+- Frame: `relative aspect-[4/3] min-h-[320px] max-h-[70svh] w-full overflow-hidden rounded-lg border border-border` with the background `radial-gradient(circle at 50% 40%, #202020, #141414)`. Under it a caption row: "Drag to rotate" on the left and "Illustrative model" on the right (`text-sm text-muted-foreground`; the second is always shown, because the models are stand-ins for the real products).
+- **Renderer:** `WebGLRenderer({ antialias: true, alpha: true })`, `setPixelRatio(Math.min(devicePixelRatio, 2))` (re-read on `resize`), sRGB output, `NeutralToneMapping`, `RoomEnvironment` through PMREM as `scene.environment` (`environmentIntensity` .9), one soft directional key light, `maxAnisotropy` on base-colour maps. Camera fov 30°.
+- **Model fitting:** each model (loaded or procedural) is centred and scaled to a bounding sphere of radius 1; the camera distance is `1 / sin(fov / 2) / 0.72`, so every product fills the same share of the frame. No pixel or unit sizes of a particular file appear anywhere in code, so a better GLB can replace a file with no code change.
+- **Orbit rig** (own small implementation, not `OrbitControls`): azimuth and polar angles, pointer drag with pointer capture, inertia (damping .92 per frame at 60 fps, frame-rate independent), polar clamp from 25° to 115° from the top, no zoom, no pan, auto-rotate at 0.35 rad/s until the first interaction (and never under `prefers-reduced-motion`; then the loop renders only after an interaction). Set `touch-action: pan-y` on the canvas so a vertical swipe scrolls the page and a horizontal drag rotates. The wheel is never captured.
+- **Keyboard and screen readers:** the canvas has `tabIndex={0}`, `role="img"` and `aria-label` = `"3D model of {name}. Use the arrow keys to rotate."`; arrow keys rotate by 0.15 rad per press; focus ring as in "Tokens".
+- **Switching products** inside the same viewer: abort the previous load (`AbortController`), ignore any result that belongs to an older request (a request counter), fade the old model out and the new one in over 300ms (none under reduced motion), and dispose the old geometries, materials and textures.
+- **Loading** (`loadModel.ts`): `fetch(model, { signal })`, read the body stream to report progress (the text `Preparing the 3D model… 42%` in a `role="status"` line over the frame), parse with `GLTFLoader` (Meshopt decoder and Draco decoder as in "Stack"). If the file is missing, answers `404`, returns `text/html`, or fails to parse, **silently use the procedural model for that slug** (no console output, no error box). A stalled download (no progress for 20 seconds) is aborted and also falls back. Untextured meshes in a loaded model get `MeshStandardMaterial({ color: '#2B2B2B', roughness: 0.5, metalness: 0.25 })`, and meshes whose name matches `/led|light|status/i` get a green emissive `#05E901` material, so a plain free model still matches the palette.
+- **Procedural models** (`fallbackModels.ts`), all `MeshStandardMaterial` in charcoal (`#2B2B2B`, roughness .45, metalness .3) with green emissive `#05E901` details (LED, lens ring):
+  - `camera`: a cylinder body (radius .32, length 1.1) with a sun shield, a black lens ring and a green inner ring, a short wall arm and plate.
+  - `reader`: a `RoundedBoxGeometry` 0.9 × 1.5 × 0.25, a 3 × 4 grid of small key boxes, a green status bar at the top.
+  - `hub`: a flat box 2.0 × 0.3 × 1.0 with eight dark port insets on the front, a row of small green LEDs and two rack ears.
+- **States:** `idle`, `loading`, `ready`, `gated`, `unavailable`. `gated` (weak device, see the Spline gate) and `unavailable` (no WebGL, or the engine failed) show the product's `ProductIllustration` centred in the frame; `gated` also shows a "Load 3D view" button (44px tall) that starts loading.
+- **Lifecycle:** StrictMode-safe (fresh canvas per mount, `cancelled` flag around the async start, no `forceContextLoss()`), dynamic `import('three')` when the viewer is within one viewport of the screen, the loop paused while the frame is off screen or `document.hidden`, everything disposed on unmount, `webglcontextlost` leads to `unavailable`, and `webglcontextrestored` rebuilds once.
+- **`ProductIllustration`:** three original inline SVGs (`viewBox="0 0 240 160"`, `fill="none"`, `stroke="currentColor"`, 1.5px, green accents `hsl(var(--primary))`): a bullet camera on a wall arm with a green lens ring; a rounded reader plate with a keypad grid and a green bar; a flat network switch with eight ports and four green dots. They are `aria-hidden`; the card's text carries the meaning.
+- Free models, where to get them and how to prepare them are in the separate file `sentinel-2-3d-models-guide.md`; `docs/CREDITS.md` records the author and licence of every model used.
+
+### `/projects`
+
+Six case studies (fictional placeholders, see "Data and placeholders"). A grid of cards, each with a sector chip (`border border-border`, a green dot), the project name (`h2`), two sentences, and a result line (`text-primary` for the figure, `text-muted-foreground` for the rest). No filters.
+
+### `/about`
+
+Story (two paragraphs), three values as cards, four numbers in a row (`text-[clamp(2.5rem,6vw,4.5rem)] font-bold text-primary` with a small label), and a closing call to action to `/contact`.
+
+### `/team`
+
+Four people. Each card: a 96px circular avatar with the person's **initials** (first letters of the first two words of the localised name, so Cyrillic initials in Mongolian), `bg-muted border border-border`, initials `text-primary font-semibold text-2xl`; then the name (`h2`), the role (`text-primary text-sm`), and a two-sentence bio. No photos.
+
+### `/contact` and `/quote`
+
+Two forms, one shared look. The contact page is two columns on desktop: the form left, the details right (address, phone as a `tel:` link, e-mail only when configured, opening hours, and "We reply within one working day."). The quote page is a single centred column (`max-w-3xl`).
+
+**Shared behaviour** (`useFormSubmit`, `Field`):
+
+- The client validates with the **same zod schemas** the server uses (`shared/schemas.js`); the schema messages are codes (`required`, `tooLong`, `email`, `phone`, `invalid`, `consent`) that map to `t.form.errors.*`. Validate on submit, then on blur once a submit has been tried. The first invalid field gets focus.
+- Every control has a visible `<label>` bound with `htmlFor`; required fields show `*` and are announced (`aria-required`); an invalid field has `aria-invalid="true"` and `aria-describedby` pointing to its message (`text-destructive text-sm`, never colour alone: the message text is always present).
+- `requestId` is `crypto.randomUUID()` (fallback: a random hex string), generated once per form fill and **kept when a submit fails and is retried**, so the server can ignore duplicates. A new id is generated after a success.
+- Submit: the button is disabled and shows a spinner while pending; a 15-second timeout through `AbortController`; one request at a time. Responses: `201`/`200 ok` leads to a success panel (`role="status"`, focus moved to its heading, a "Send another" button); `400` with `fields` marks those fields; `429` shows `t.form.rateLimited`; `503` shows `t.form.unavailable`; a network error shows `t.form.network`. The status text sits in an `aria-live="polite"` region (errors: `role="alert"`).
+- **Honeypot:** an input `name="website"`, `tabIndex={-1}`, `autoComplete="off"`, inside a wrapper `aria-hidden="true"` positioned off screen (not `display:none`).
+- Native `<select>` elements (robust with every Mongolian keyboard), styled like `Input`: `h-12 w-full rounded-md border bg-hero-bg px-4 text-base`, border `hsl(var(--field-border))`, hover `hsl(0 0% 60%)`, focus ring green. Inputs are 16px text (no iOS zoom), 48px tall. Placeholders are `text-muted-foreground`.
+- The consent checkbox sits in a row with its text; the text links to `/legal/privacy`. The checkbox hit area is 44px.
+
+**Contact form fields:** full name\*, e-mail\*, phone (optional), topic\* (`general`, `call`, `support`, `careers`, `press`; `?topic=` pre-selects, default `general`), message\* (rows 6), consent\*.
+
+**Quote form fields:** full name\*, company, e-mail\*, phone\*, service\* (`surveillance`, `access`, `network`, `audit`; `?service=`), type of site\* (`office`, `retail`, `warehouse`, `residential`, `industrial`, `other`), product of interest (optional: "No preference" or one of the three; `?product=`), preferred contact\* (radio: phone or e-mail, default phone), details\* (rows 6), consent\*.
+
+### `/legal/:slug`
+
+`privacy`, `terms`, `cookies`: a narrow column (`max-w-3xl`), `h1`, "Last updated" line, and four numbered sections with `h2`. Plain, short, sensible text (provided in `pages.en.ts` / `pages.mn.ts`). The cookie page states honestly that the site sets no cookies and stores only the language choice in the browser's local storage.
+
+## Footer (Appendix C, with these overrides)
+
+`SiteFooter` is the last element on every page (including the 404). Build Appendix C exactly (root, dots strip, inner, top grid, nav columns, brand row, legal line, breakpoints at 980 and 560) and apply:
+
+1. **Fonts and weights:** see "Fonts" (Sora stack; H2 weight 300; wordmark 700; nav links 600).
+2. **Content.** English values (Mongolian in the i18n files):
+   - H2: `Security built right, deployed fast.`
+   - Column 1 (`aria-label` "Explore"): Services `/services`, Products `/products`, Projects `/projects`, About us `/about`, Team `/team`.
+   - Column 2 (`aria-label` "Company"): Contact us `/contact`, Get a quote `/quote`, Careers `/contact?topic=careers`, Press `/contact?topic=press`.
+   - Column 3 (`aria-label` "Social"): LinkedIn, Facebook, Instagram, each `target="_blank" rel="noopener noreferrer"` with a visually hidden "(opens in a new tab)". **A link renders only when its address passes `hasUrl`** (`lib/url.ts`: a string that is a valid `https://` URL). The addresses come from the optional environment variables `VITE_SOCIAL_LINKEDIN`, `VITE_SOCIAL_FACEBOOK`, `VITE_SOCIAL_INSTAGRAM`; none is invented. When none is set, column 3 is not rendered and the grid gets the modifier `site-footer__top--two` (`grid-template-columns: minmax(320px, 1.25fr) repeat(2, minmax(150px, 0.42fr))`; the 980px and 560px rules stay).
+   - Internal links are router `<Link>`s; the footer has no `#hash` placeholder links.
+3. **Contact lines** go under the H2, in the first grid cell, so the grid is unchanged: an `<address class="site-footer__contact">` (`font-style: normal`, `margin-top: clamp(18px, 2vw, 32px)`, 15px, white at 0.72 = 10.59:1, lines 6px apart) with: the address `Khan-Uul District, Ulaanbaatar` (MN `Улаанбаатар хот, Хан-Уул дүүрэг`), the phone `9007 0740` as `<a href="tel:+97690070740">`, the e-mail as `mailto:` only when `VITE_CONTACT_EMAIL` is set and valid, and the hours `Mon–Fri 09:00–18:00`. Links inside get an `::after` hit area of at least 24px height.
+4. **Colours.** The brand mark circle is `hsl(var(--primary))` (not white) with the black zig-zag from Appendix C; the wordmark is `SENTINEL` in white followed by ` AI` in `hsl(var(--primary))`. Nav links, dots and the black background are as in the source.
+5. **Legal line:** `© {year} SENTINEL AI. All rights reserved.` (the year from `new Date().getFullYear()`), then Privacy policy `/legal/privacy`, Terms of use `/legal/terms`, Cookie policy `/legal/cookies`, then the compact `LanguageToggle`. **12px** at white 0.6 (7.33:1 on black), not 9px at 0.52. Legal links have an `::after` hit area of at least 24px height.
+6. **Wordmark fit** (the source's size would overflow in this site, because "SENTINEL AI" is wider than "EngineTech"). Measured in Sora 700 with `-0.055em` tracking, the text is **5.834em** wide. The brand row becomes a size container, and the wordmark is limited by what is left next to the mark:
+
+```css
+.site-footer__brand-row {
+  container-type: inline-size;
+  --mark: clamp(58px, 6.1vw, 118px);
+  --mark-gap: clamp(14px, 1.6vw, 28px);
+}
+.site-footer__mark { flex: 0 0 var(--mark); margin-right: var(--mark-gap); }
+.site-footer__wordmark {
+  font-size: min(clamp(58px, 11.1vw, 214px), calc((100cqw - var(--mark) - var(--mark-gap)) / 5.95));
+}
+@media (max-width: 560px) {
+  .site-footer__brand-row { --mark: clamp(38px, 12vw, 58px); }
+  .site-footer__wordmark {
+    font-size: min(clamp(45px, 18vw, 84px), calc((100cqw - var(--mark) - var(--mark-gap)) / 5.95));
+  }
+}
+```
+
+   The wordmark must never be wider than the row and never clipped at any width from 320px to 2560px, in both languages (it is Latin in both). Uppercase has no descenders, so `line-height: .78` stays.
+7. **Stacking and motion:** the footer's `z-index` is 10 (see "Tokens"), and `footerDotsMove` is switched off under `prefers-reduced-motion: reduce`.
+8. **Semantics:** `<footer>` (the page's `contentinfo`), three `<nav>`s with the `aria-label`s above, the dots strip `aria-hidden="true"` (as in the source), the brand link `href="/"` with `aria-label="SENTINEL AI, home"`.
+9. **Acceptance for the footer** (apply the lessons of the earlier sites): at every width from the verification list there is no horizontal scroll, the wordmark is fully inside the row, the three columns never overlap the H2, the legal line wraps (it does not overflow) and the toggle stays on screen; every link works (no dead `#` links); with the Social column absent the layout is still balanced; the footer sits below the menu sheet when the sheet is open; and it renders identically on `/`, `/services` and the 404.
+
+## Themed 404 (`*`)
+
+A real, designed page, not a text apology. It is the `NotFoundPage`, shown for every unknown path, unknown product slug and unknown legal slug, inside the normal shell (navbar and footer stay).
+
+- **Words:** eyebrow `ERROR 404 · SIGNAL LOST`; `h1` **`Outside the perimeter.`** (MN **`Хамгаалалтын хүрээнээс гадуур.`**); a sentence ("The page you asked for is not inside our protected area. It may have moved, or the address may be wrong."); the requested path in a line `Requested: /the/path` (monospace system font, `text-muted-foreground`, the path is text only, never HTML, cut to 80 characters with an ellipsis and a `title` with the full value); two buttons ("Back to home" green, "Contact us" `heroOutline`); and a row of quick links (Services, Products, Projects, Contact).
+- **Look:** `relative isolate min-h-[100svh] overflow-hidden bg-hero-bg pt-32 pb-20`, content left on desktop, centred on phones. Behind it, `aria-hidden`: a **radar**, `min(90vw, 720px)` square, right-aligned on desktop and centred behind the text on phones at 60% opacity: three concentric rings (`radial-gradient` / `repeating-radial-gradient`, 1px `hsl(119 99% 46% / .18)`), two 1px crosshair lines, a **sweep** (`conic-gradient(from 0deg, hsl(119 99% 46% / .28), transparent 40deg)` rotating once every 6s, linear, infinite), and three small green blips that fade in and out at different times. A large decorative "404" (Sora 700, `text-[clamp(6rem,22vw,16rem)] leading-none`, `aria-hidden`) wrapped by four green **corner brackets** (`::before` / `::after` borders) as if a target were locked. Text keeps at least 4.5:1 over every ring.
+- **Motion:** the sweep and the blips stop under `prefers-reduced-motion: reduce` (the radar stays as a static drawing).
+- **Behaviour:** sets `document.title` to `404 | SENTINEL AI` (translated), adds `<meta name="robots" content="noindex">` while mounted, and the server answers **status 404** for the same paths (see "Database", section "Behaviour"). It must use the shell's skip link and focus handling like any page.
+- **Language:** all strings from i18n (`t.notFound.*`), so the toggle works on this page too.
+
+## Data and placeholders
+
+- Everything the owner must replace before launch is listed in `docs/CONTENT.md`: the four team members, the six case studies, the four numbers on `/about`, the product specifications, the opening hours, the legal texts (they need a lawyer's review), and the optional e-mail and social addresses. All of these are fictional placeholders written in the same tone as the real thing would be.
+- **Fixed, real contact details** (the same on every project of this owner): address `Улаанбаатар хот, Хан-Уул дүүрэг` / `Khan-Uul District, Ulaanbaatar`; phone `9007 0740`, link `tel:+97690070740`. Never remove or change them in later edits.
+- `src/content/brand.ts`:
+
+```ts
+import { hasUrl, isEmail } from '@/lib/url';
+
+const env = import.meta.env;
+
+export const brand = {
+  name: 'SENTINEL AI',
+  phoneDisplay: '9007 0740',
+  phoneHref: 'tel:+97690070740',
+  email: isEmail(env.VITE_CONTACT_EMAIL) ? env.VITE_CONTACT_EMAIL : '',
+  social: {
+    linkedin: hasUrl(env.VITE_SOCIAL_LINKEDIN) ? env.VITE_SOCIAL_LINKEDIN : '',
+    facebook: hasUrl(env.VITE_SOCIAL_FACEBOOK) ? env.VITE_SOCIAL_FACEBOOK : '',
+    instagram: hasUrl(env.VITE_SOCIAL_INSTAGRAM) ? env.VITE_SOCIAL_INSTAGRAM : '',
+  },
+} as const;
+```
+
+- `src/lib/url.ts` exports `hasUrl(value: unknown): value is string` (a string that `new URL()` parses with protocol `https:` and a host with a dot) and `isEmail(value: unknown): value is string` (a simple `^[^\s@]+@[^\s@]+\.[^\s@]+$`). Declare the optional `VITE_*` variables in `src/vite-env.d.ts`.
+
+## Language files
+
+Four typed files plus the check script. **Use these strings exactly** (they are the finished English and Mongolian copy); do not rewrite, shorten or "improve" them. The English hero, heading and glass strings are the source designs' own words, adapted only where "Overrides" says so.
+
+How they are used:
+
+- `format(text, vars)` in `src/i18n/format.ts` replaces `{year}`, `{phone}` and `{name}`.
+- Eyebrow strings (`glass.eyebrow`, `notFound.eyebrow` and every `eyebrow` in the page files) are stored in sentence case and shown in capitals (`uppercase` in CSS; on the glass canvas `toLocaleUpperCase(locale)`), so the same string works in both languages.
+- `form.consent` is split into `before`, `link`, `after` so the link to the privacy policy can sit anywhere in the sentence in either language.
+- `glass.terms` has five entries, in the order Zero trust, Edge inference, Access control, Audit log, Response time.
+- `products.items`, `services.items` follow the order of `PRODUCT_SLUGS` and `SERVICES`; the product's name and code come from `src/content/products.ts`.
+- `projects.items[i].figure` is shown large in green, `result` follows it in `text-muted-foreground`.
+- `legal.*.sections` are numbered `1.` to `4.` by the page, not in the strings.
+- The social network names (LinkedIn, Facebook, Instagram) are brand names, fixed in `SiteFooter`, not in the i18n files.
+
+### `src/i18n/en.ts`
+
+```ts
+export type DeepStrings<T> = T extends string
+  ? string
+  : T extends readonly (infer U)[]
+    ? DeepStrings<U>[]
+    : { [K in keyof T]: DeepStrings<T[K]> };
+
+export const en = {
+  meta: {
+    titleHome: 'SENTINEL AI | Security systems built right',
+    description:
+      'SENTINEL AI designs and installs AI surveillance, smart access control and zero-trust networks for businesses in Ulaanbaatar.',
+    pages: {
+      services: 'Services',
+      products: 'Products',
+      projects: 'Projects',
+      about: 'About us',
+      team: 'Team',
+      contact: 'Contact',
+      quote: 'Get a quote',
+      privacy: 'Privacy policy',
+      terms: 'Terms of use',
+      cookies: 'Cookie policy',
+      notFound: '404 — Page not found',
+    },
+    descriptions: {
+      services: 'AI surveillance, smart access control, zero-trust networks and security audits, planned, installed and monitored.',
+      products: 'Sentinel Eye camera, Sentinel Gate access reader and Sentinel Core network switch. Turn each one in 3D.',
+      projects: 'A selection of the warehouses, shops, clinics and offices that SENTINEL AI has secured.',
+      about: 'SENTINEL AI is a team of security engineers in Ulaanbaatar. Learn how we work and what we stand for.',
+      team: 'Meet the engineers and operators behind SENTINEL AI.',
+      contact: 'Talk to a SENTINEL AI engineer. Phone 9007 0740, Khan-Uul District, Ulaanbaatar.',
+      quote: 'Tell us about your site and get a quote for surveillance, access control or a secure network.',
+      legal: 'How SENTINEL AI handles your data, what the site terms are, and how cookies are used.',
+      notFound: 'The page you asked for was not found.',
+    },
+  },
+  a11y: {
+    skip: 'Skip to content',
+    mainNav: 'Main',
+    mobileNav: 'Mobile',
+    openMenu: 'Open menu',
+    closeMenu: 'Close menu',
+    menuTitle: 'Menu',
+    menuDescription: 'Site navigation and language',
+    language: 'Language',
+    opensNewTab: '(opens in a new tab)',
+  },
+  nav: {
+    services: 'Services',
+    products: 'Products',
+    projects: 'Projects',
+    about: 'About Us',
+    team: 'Team',
+    contact: 'Contacts',
+    getQuote: 'Get Quote',
+  },
+  hero: {
+    sub: 'We implement security correctly.',
+    desc: 'Enterprise security systems built in days. AI-powered surveillance deployed with zero-trust architecture. Smart access control set up for your entire facility. All of it done right, not just fast.',
+    book: 'Book a Call',
+    work: 'Our Work',
+    trust: 'Trusted security partner. Ulaanbaatar. 12 systems deployed.',
+    load3d: 'Load 3D background',
+    retry3d: 'Retry 3D',
+  },
+  glass: {
+    eyebrow: 'Security by design',
+    line1: 'Security',
+    line2: 'in glass.',
+    sub: 'See every door, camera and login in one live view. Clear by design, strong by default.',
+    open: 'See the system',
+    read: 'Read the principles →',
+    back: '← Back',
+    copyLeft: '© {year} SENTINEL AI',
+    copyRight: 'Zero-trust architecture',
+    navBrand: 'SENTINEL AI',
+    navServices: 'Services',
+    navProducts: 'Products',
+    navProjects: 'Projects',
+    navCta: 'Get a quote',
+    termsTitle: 'Security, in five terms.',
+    terms: [
+      { name: 'Zero trust', text: 'Nothing is trusted by default. Every person, device and request is checked each time it asks for access.' },
+      { name: 'Edge inference', text: 'The camera does the thinking. Video is analysed on the device itself, so footage does not need to leave your site to be understood.' },
+      { name: 'Access control', text: 'Who may open which door, and when. Rules are set once and enforced at every reader.' },
+      { name: 'Audit log', text: 'A record of every event that cannot be edited afterwards, so you can always see what happened.' },
+      { name: 'Response time', text: 'The seconds between an alert and a person acting on it. We design every system to keep that gap short.' },
+    ],
+  },
+  home: {
+    servicesEyebrow: 'What we do',
+    servicesTitle: 'Four ways we keep a site safe',
+    servicesLead: 'From the first camera to the last door, we plan, install and watch over the whole system.',
+    viewServices: 'View all services',
+    learnMore: 'Learn more',
+    productsEyebrow: 'Products',
+    productsTitle: 'Hardware we install every week',
+    productsLead: 'Three building blocks, tested together. Turn them in 3D and see how they fit.',
+    viewProducts: 'See all products',
+    projectsEyebrow: 'Projects',
+    projectsTitle: 'Systems already at work',
+    projectsLead: 'A few of the sites we have secured.',
+    viewProjects: 'All projects',
+    ctaTitle: 'Ready to secure your site?',
+    ctaText: 'Tell us about your building. We will reply within one working day.',
+    ctaQuote: 'Get a quote',
+    ctaCall: 'Call {phone}',
+  },
+  productsUi: {
+    switcher: 'Choose a product',
+    drag: 'Drag to rotate',
+    illustrative: 'Illustrative model',
+    loading: 'Preparing the 3D model…',
+    load3d: 'Load 3D view',
+    unavailable: 'The 3D view is not available on this device.',
+    modelLabel: '3D model of {name}. Use the arrow keys to rotate.',
+    quoteCta: 'Request a quote',
+    talkCta: 'Contact an engineer',
+    specs: 'Specifications',
+  },
+  form: {
+    requiredNote: 'Fields marked * are required.',
+    optional: '(optional)',
+    send: 'Send message',
+    sendQuote: 'Send request',
+    sending: 'Sending…',
+    sendAnother: 'Send another',
+    errors: {
+      required: 'Please fill in this field.',
+      tooLong: 'This text is too long.',
+      email: 'Enter a valid e-mail address.',
+      phone: 'Enter a valid phone number.',
+      invalid: 'Please choose an option from the list.',
+      consent: 'Please confirm to continue.',
+    },
+    rateLimited: 'Too many requests. Please wait a few minutes and try again.',
+    unavailable: 'We cannot receive messages right now. Please call us instead.',
+    network: 'The connection failed. Check your internet and try again.',
+    labels: {
+      fullName: 'Full name',
+      company: 'Company',
+      email: 'E-mail',
+      phone: 'Phone',
+      topic: 'Topic',
+      message: 'Message',
+      details: 'Details about your site',
+      service: 'Service',
+      siteType: 'Type of site',
+      product: 'Product of interest',
+      preferred: 'How should we reach you?',
+    },
+    phoneHint: 'Example: 9007 0740',
+    topics: {
+      general: 'General question',
+      call: 'Book a call',
+      support: 'Support',
+      careers: 'Careers',
+      press: 'Press',
+    },
+    services: {
+      surveillance: 'AI surveillance',
+      access: 'Smart access control',
+      network: 'Zero-trust network',
+      audit: 'Security audit',
+    },
+    siteTypes: {
+      office: 'Office',
+      retail: 'Shop or retail',
+      warehouse: 'Warehouse',
+      residential: 'Residential building',
+      industrial: 'Industrial site',
+      other: 'Other',
+    },
+    productNone: 'No preference',
+    preferred: { phone: 'Phone', email: 'E-mail' },
+    consent: {
+      before: 'I agree that SENTINEL AI may contact me about this request, as described in the ',
+      link: 'privacy policy',
+      after: '.',
+    },
+    success: {
+      title: 'Thank you. We have your message.',
+      text: 'We reply within one working day.',
+    },
+    successQuote: {
+      title: 'Thank you. We have your request.',
+      text: 'An engineer will contact you within one working day.',
+    },
+  },
+  footer: {
+    headline: 'Security built right, deployed fast.',
+    explore: 'Explore',
+    company: 'Company',
+    social: 'Social',
+    address: 'Khan-Uul District, Ulaanbaatar',
+    hours: 'Mon–Fri 09:00–18:00',
+    rights: '© {year} SENTINEL AI. All rights reserved.',
+    privacy: 'Privacy policy',
+    terms: 'Terms of use',
+    cookies: 'Cookie policy',
+    links: {
+      services: 'Services',
+      products: 'Products',
+      projects: 'Projects',
+      about: 'About us',
+      team: 'Team',
+      contact: 'Contact us',
+      quote: 'Get a quote',
+      careers: 'Careers',
+      press: 'Press',
+    },
+  },
+  notFound: {
+    eyebrow: 'Error 404 · signal lost',
+    title: 'Outside the perimeter.',
+    text: 'The page you asked for is not inside our protected area. It may have moved, or the address may be wrong.',
+    requested: 'Requested:',
+    home: 'Back to home',
+    contact: 'Contact us',
+    quick: 'Quick links',
+  },
+};
+
+export type Messages = DeepStrings<typeof en>;
+```
+
+### `src/i18n/mn.ts`
+
+```ts
+import type { Messages } from './en';
+
+export const mn: Messages = {
+  meta: {
+    titleHome: 'SENTINEL AI | Зөв барьсан хамгаалалтын систем',
+    description:
+      'SENTINEL AI нь Улаанбаатарын байгууллагуудад зориулж хиймэл оюун ухаант хяналтын камер, ухаалаг нэвтрэх хяналт, zero-trust сүлжээг зохион бүтээж, суурилуулдаг.',
+    pages: {
+      services: 'Үйлчилгээ',
+      products: 'Бүтээгдэхүүн',
+      projects: 'Төслүүд',
+      about: 'Бидний тухай',
+      team: 'Баг',
+      contact: 'Холбоо барих',
+      quote: 'Үнийн санал авах',
+      privacy: 'Нууцлалын бодлого',
+      terms: 'Ашиглах нөхцөл',
+      cookies: 'Күүкигийн бодлого',
+      notFound: '404 — Хуудас олдсонгүй',
+    },
+    descriptions: {
+      services: 'Хиймэл оюун ухаант хяналт, ухаалаг нэвтрэх хяналт, zero-trust сүлжээ, аюулгүй байдлын аудитыг төлөвлөж, суурилуулж, хянана.',
+      products: 'Sentinel Eye камер, Sentinel Gate нэвтрэх уншигч, Sentinel Core сүлжээний свитч. Тус бүрийг 3D-ээр эргүүлж үзээрэй.',
+      projects: 'SENTINEL AI-ийн хамгаалсан агуулах, дэлгүүр, эмнэлэг, оффисуудаас хэд хэдэн жишээ.',
+      about: 'SENTINEL AI бол Улаанбаатар дахь хамгаалалтын инженерүүдийн баг. Бидний ажиллах арга, баримталдаг зарчмыг уншаарай.',
+      team: 'SENTINEL AI-ийн ард буй инженер, ажилтнуудтай танилцаарай.',
+      contact: 'SENTINEL AI-ийн инженертэй ярилцаарай. Утас 9007 0740, Улаанбаатар хот, Хан-Уул дүүрэг.',
+      quote: 'Байгууламжийнхаа талаар хэлээд хяналтын камер, нэвтрэх хяналт эсвэл аюулгүй сүлжээний үнийн санал аваарай.',
+      legal: 'SENTINEL AI таны мэдээллийг хэрхэн боловсруулдаг, сайтын нөхцөл, күүкиг хэрхэн ашигладаг тухай.',
+      notFound: 'Таны хайсан хуудас олдсонгүй.',
+    },
+  },
+  a11y: {
+    skip: 'Үндсэн агуулга руу очих',
+    mainNav: 'Үндсэн',
+    mobileNav: 'Гар утасны',
+    openMenu: 'Цэс нээх',
+    closeMenu: 'Цэс хаах',
+    menuTitle: 'Цэс',
+    menuDescription: 'Сайтын навигац ба хэл сонгох',
+    language: 'Хэл',
+    opensNewTab: '(шинэ табт нээгдэнэ)',
+  },
+  nav: {
+    services: 'Үйлчилгээ',
+    products: 'Бүтээгдэхүүн',
+    projects: 'Төслүүд',
+    about: 'Бидний тухай',
+    team: 'Баг',
+    contact: 'Холбоо барих',
+    getQuote: 'Үнийн санал',
+  },
+  hero: {
+    sub: 'Бид хамгаалалтыг зөв хэрэгжүүлдэг.',
+    desc: 'Байгууллагын хамгаалалтын системийг хэдхэн хоногт бүтээнэ. Хиймэл оюун ухаант хяналтыг zero-trust архитектуртай хослуулан суулгана. Ухаалаг нэвтрэх хяналтыг таны бүх байгууламжид тохируулна. Бүгдийг хурдан төдийгүй зөв хийнэ.',
+    book: 'Ярилцлага товлох',
+    work: 'Бидний ажил',
+    trust: 'Найдвартай хамгаалалтын түнш. Улаанбаатар. 12 систем нэвтрүүлсэн.',
+    load3d: '3D дэвсгэр ачаалах',
+    retry3d: '3D дахин оролдох',
+  },
+  glass: {
+    eyebrow: 'Хамгаалалт зохиомжоос эхэлнэ',
+    line1: 'Хамгаалалт',
+    line2: 'шилэн дотор.',
+    sub: 'Хаалга, камер, нэвтрэлт бүрийг нэг шууд дэлгэцээс хараарай. Зохиомжоороо ил тод, анхнаасаа хүчтэй.',
+    open: 'Системийг үзэх',
+    read: 'Зарчмуудыг унших →',
+    back: '← Буцах',
+    copyLeft: '© {year} SENTINEL AI',
+    copyRight: 'Zero-trust архитектур',
+    navBrand: 'SENTINEL AI',
+    navServices: 'Үйлчилгээ',
+    navProducts: 'Бүтээгдэхүүн',
+    navProjects: 'Төслүүд',
+    navCta: 'Үнийн санал авах',
+    termsTitle: 'Хамгаалалт таван нэр томьёогоор.',
+    terms: [
+      { name: 'Тэг итгэл', text: 'Өгөгдмөлөөр хэнд ч, юунд ч итгэхгүй. Хүн, төхөөрөмж, хүсэлт бүр нэвтрэх эрх авахдаа заавал шалгагдана.' },
+      { name: 'Захын дүн шинжилгээ', text: 'Камер өөрөө шинжилнэ. Бичлэгийг төхөөрөмж дээр нь задлан шинжилдэг тул ойлгогдохын тулд таны байгууламжаас гарах шаардлагагүй.' },
+      { name: 'Нэвтрэх хяналт', text: 'Хэн ямар хаалгаар хэзээ нэвтрэхийг тогтооно. Дүрмийг нэг удаа зааж, уншигч бүр дээр мөрдүүлнэ.' },
+      { name: 'Аудитын бүртгэл', text: 'Үйл явдал бүрийн бүртгэл. Дараа нь засах боломжгүй тул юу болсныг үргэлж харж болно.' },
+      { name: 'Хариу өгөх хугацаа', text: 'Дохио ирснээс хойш хүн арга хэмжээ авах хүртэлх секунд. Бид систем бүрийг энэ зайг богино байлгахаар зохиодог.' },
+    ],
+  },
+  home: {
+    servicesEyebrow: 'Бидний үйл ажиллагаа',
+    servicesTitle: 'Байгууламжийг хамгаалах дөрвөн арга',
+    servicesLead: 'Эхний камераас сүүлийн хаалга хүртэл бүх системийг төлөвлөж, суурилуулж, хянана.',
+    viewServices: 'Бүх үйлчилгээг үзэх',
+    learnMore: 'Илүү ихийг мэдэх',
+    productsEyebrow: 'Бүтээгдэхүүн',
+    productsTitle: 'Бид долоо хоног бүр суурилуулдаг төхөөрөмж',
+    productsLead: 'Хамтад нь шалгасан гурван тулгуур. 3D-ээр эргүүлж, хэрхэн нийцдэгийг хараарай.',
+    viewProducts: 'Бүх бүтээгдэхүүнийг үзэх',
+    projectsEyebrow: 'Төслүүд',
+    projectsTitle: 'Аль хэдийн ажиллаж буй системүүд',
+    projectsLead: 'Бидний хамгаалсан хэдэн байгууламж.',
+    viewProjects: 'Бүх төсөл',
+    ctaTitle: 'Байгууламжаа хамгаалахад бэлэн үү?',
+    ctaText: 'Барилгынхаа талаар хэлээрэй. Бид нэг ажлын өдрийн дотор хариулна.',
+    ctaQuote: 'Үнийн санал авах',
+    ctaCall: '{phone} руу залгах',
+  },
+  productsUi: {
+    switcher: 'Бүтээгдэхүүн сонгох',
+    drag: 'Эргүүлэхийн тулд чирнэ үү',
+    illustrative: 'Жишээ загвар',
+    loading: '3D загварыг бэлдэж байна…',
+    load3d: '3D харагдац ачаалах',
+    unavailable: 'Энэ төхөөрөмж дээр 3D харагдац ажиллахгүй байна.',
+    modelLabel: '{name}-ийн 3D загвар. Эргүүлэхийн тулд сумтай товчийг ашиглана уу.',
+    quoteCta: 'Үнийн санал авах',
+    talkCta: 'Инженертэй ярилцах',
+    specs: 'Үзүүлэлт',
+  },
+  form: {
+    requiredNote: '* тэмдэгтэй талбарыг заавал бөглөнө.',
+    optional: '(заавал биш)',
+    send: 'Мессеж илгээх',
+    sendQuote: 'Хүсэлт илгээх',
+    sending: 'Илгээж байна…',
+    sendAnother: 'Өөр хүсэлт илгээх',
+    errors: {
+      required: 'Энэ талбарыг бөглөнө үү.',
+      tooLong: 'Текст хэт урт байна.',
+      email: 'Зөв и-мэйл хаяг оруулна уу.',
+      phone: 'Зөв утасны дугаар оруулна уу.',
+      invalid: 'Жагсаалтаас сонголтоо хийнэ үү.',
+      consent: 'Үргэлжлүүлэхийн тулд зөвшөөрнө үү.',
+    },
+    rateLimited: 'Хэт олон хүсэлт илгээлээ. Хэдэн минут хүлээгээд дахин оролдоно уу.',
+    unavailable: 'Одоогоор мессеж хүлээн авах боломжгүй байна. Утсаар залгана уу.',
+    network: 'Холболт тасарлаа. Интернэтээ шалгаад дахин оролдоно уу.',
+    labels: {
+      fullName: 'Овог нэр',
+      company: 'Байгууллага',
+      email: 'И-мэйл',
+      phone: 'Утас',
+      topic: 'Сэдэв',
+      message: 'Мессеж',
+      details: 'Байгууламжийн талаарх мэдээлэл',
+      service: 'Үйлчилгээ',
+      siteType: 'Байгууламжийн төрөл',
+      product: 'Сонирхсон бүтээгдэхүүн',
+      preferred: 'Танд хэрхэн холбогдох вэ?',
+    },
+    phoneHint: 'Жишээ: 9007 0740',
+    topics: {
+      general: 'Ерөнхий асуулт',
+      call: 'Ярилцлага товлох',
+      support: 'Дэмжлэг',
+      careers: 'Ажлын байр',
+      press: 'Хэвлэл мэдээлэл',
+    },
+    services: {
+      surveillance: 'AI хяналтын камер',
+      access: 'Ухаалаг нэвтрэх хяналт',
+      network: 'Zero-trust сүлжээ',
+      audit: 'Аюулгүй байдлын аудит',
+    },
+    siteTypes: {
+      office: 'Оффис',
+      retail: 'Дэлгүүр, худалдааны газар',
+      warehouse: 'Агуулах',
+      residential: 'Орон сууцны барилга',
+      industrial: 'Үйлдвэрийн талбай',
+      other: 'Бусад',
+    },
+    productNone: 'Сонголтгүй',
+    preferred: { phone: 'Утас', email: 'И-мэйл' },
+    consent: {
+      before: 'SENTINEL AI энэ хүсэлттэй холбоотой надтай холбогдохыг зөвшөөрч байна (',
+      link: 'нууцлалын бодлого',
+      after: ').',
+    },
+    success: {
+      title: 'Баярлалаа. Мессежийг хүлээн авлаа.',
+      text: 'Бид нэг ажлын өдрийн дотор хариулна.',
+    },
+    successQuote: {
+      title: 'Баярлалаа. Хүсэлтийг хүлээн авлаа.',
+      text: 'Манай инженер нэг ажлын өдрийн дотор тантай холбогдоно.',
+    },
+  },
+  footer: {
+    headline: 'Зөв барьсан, хурдан нэвтрүүлсэн хамгаалалт.',
+    explore: 'Судлах',
+    company: 'Компани',
+    social: 'Нийгмийн сүлжээ',
+    address: 'Улаанбаатар хот, Хан-Уул дүүрэг',
+    hours: 'Даваа–Баасан 09:00–18:00',
+    rights: '© {year} SENTINEL AI. Бүх эрх хуулиар хамгаалагдсан.',
+    privacy: 'Нууцлалын бодлого',
+    terms: 'Ашиглах нөхцөл',
+    cookies: 'Күүкигийн бодлого',
+    links: {
+      services: 'Үйлчилгээ',
+      products: 'Бүтээгдэхүүн',
+      projects: 'Төслүүд',
+      about: 'Бидний тухай',
+      team: 'Баг',
+      contact: 'Бидэнтэй холбогдох',
+      quote: 'Үнийн санал авах',
+      careers: 'Ажлын байр',
+      press: 'Хэвлэл мэдээлэл',
+    },
+  },
+  notFound: {
+    eyebrow: 'Алдаа 404 · дохио тасарлаа',
+    title: 'Хамгаалалтын хүрээнээс гадуур.',
+    text: 'Таны хайсан хуудас манай хамгаалалтын бүсэд байхгүй байна. Шилжсэн эсвэл хаяг буруу байж магадгүй.',
+    requested: 'Хүссэн хаяг:',
+    home: 'Нүүр хуудас руу буцах',
+    contact: 'Холбоо барих',
+    quick: 'Түргэн холбоос',
+  },
+};
+```
+
+### `src/i18n/pages.en.ts`
+
+```ts
+import type { DeepStrings } from './en';
+
+// Lists run in the same order as SERVICES and PRODUCT_SLUGS in shared/constants.js.
+export const pagesEn = {
+  services: {
+    eyebrow: 'Services',
+    title: 'Security that is planned, installed and watched',
+    lead: 'Four services that work alone or together. Every one ends with a system we stand behind.',
+    quote: 'Get a quote for this',
+    items: [
+      {
+        title: 'AI surveillance',
+        summary: 'Cameras that understand what they see and raise only the alerts that matter.',
+        text: 'We plan camera positions from a site walk, install cameras that analyse video on the device, and connect them to one live view. People, vehicles and unusual movement are recognised in real time, so your team sees the few events that matter instead of hours of footage.',
+        points: [
+          'Site walk and camera plan',
+          'On-device person and vehicle detection',
+          'Live view and alerts on phone and screen',
+          'Storage and retention set to your policy',
+        ],
+      },
+      {
+        title: 'Smart access control',
+        summary: 'Doors that know who may enter, and a record of who did.',
+        text: 'We fit readers and controllers that accept cards, PIN codes and phones. Rules are set once, by person, door and time of day, and apply everywhere. Lost cards are blocked in seconds, and every entry is recorded.',
+        points: [
+          'Card, PIN and phone credentials',
+          'Rules by person, door and schedule',
+          'Instant removal of lost credentials',
+          'Entry log you can search and export',
+        ],
+      },
+      {
+        title: 'Zero-trust network',
+        summary: 'A network where every device and user has to prove itself.',
+        text: 'Cameras and readers are a favourite way into a company network. We separate them from your office network, give every device its own certificate, and allow only the traffic each one needs. Nothing is trusted just because it is inside.',
+        points: [
+          'Separate network for security devices',
+          'A certificate for every device',
+          'Only the traffic each device needs',
+          'Alerts for unknown devices',
+        ],
+      },
+      {
+        title: 'Security audit and training',
+        summary: 'A clear picture of your risks, and a team that knows what to do.',
+        text: 'We walk your site, test your doors, cameras and network, and write a short report in plain language with a ranked list of fixes. Then we train your staff with short drills, so a plan on paper becomes a habit.',
+        points: [
+          'On-site assessment',
+          'Plain-language report with priorities',
+          'Staff drills and checklists',
+          'Follow-up check after three months',
+        ],
+      },
+    ],
+    process: {
+      title: 'How we work',
+      lead: 'The same four steps on every site, so nothing is left to chance.',
+      steps: [
+        { title: 'Assess', text: 'We walk the site, listen to your concerns and list what needs protecting.' },
+        { title: 'Design', text: 'You receive a clear plan, a fixed price and a date.' },
+        { title: 'Install', text: 'Our engineers fit and test every device, usually within days and with as little disruption as possible.' },
+        { title: 'Monitor', text: 'We keep watching: updates, health checks and a phone number that is answered.' },
+      ],
+    },
+  },
+  products: {
+    eyebrow: 'Products',
+    title: 'Three building blocks, tested together',
+    lead: 'Cameras, door readers and the network that connects them. Turn each one in 3D.',
+    items: [
+      {
+        tagline: 'AI security camera',
+        text: 'A compact camera that analyses video on the device itself. It tells people from shadows and vehicles from animals, sends an alert within seconds, and keeps working if the network drops.',
+        specs: [
+          { label: 'Sensor', value: '8 MP, 4K video' },
+          { label: 'Night vision', value: 'up to 30 m' },
+          { label: 'On-device AI', value: 'person, vehicle, intrusion' },
+          { label: 'Protection', value: 'IP67, −30 to +55 °C' },
+          { label: 'Power', value: 'PoE (802.3af)' },
+        ],
+      },
+      {
+        tagline: 'Access reader with keypad',
+        text: 'A reader and keypad in one slim plate. Staff open doors with a card, a PIN or a phone, and every entry is written to the audit log. Rules stay on the device, so doors keep working during a network outage.',
+        specs: [
+          { label: 'Credentials', value: 'card, PIN, phone (NFC)' },
+          { label: 'Users', value: 'up to 5,000 per reader' },
+          { label: 'Protection', value: 'IP65, backlit keypad' },
+          { label: 'Power', value: 'PoE or 12 V DC' },
+          { label: 'Works offline', value: 'yes, keeps its rules' },
+        ],
+      },
+      {
+        tagline: 'Managed PoE network switch',
+        text: 'The network switch that ties the system together. It powers cameras and readers over one cable and keeps them on a separate, locked-down network, so a compromised device cannot reach your office computers.',
+        specs: [
+          { label: 'Ports', value: '8 × Gigabit PoE+' },
+          { label: 'PoE budget', value: '120 W' },
+          { label: 'Security', value: 'VLAN, 802.1X, port security' },
+          { label: 'Mounting', value: 'desk or rack' },
+          { label: 'Logs', value: 'signed, kept for 90 days' },
+        ],
+      },
+    ],
+  },
+  projects: {
+    eyebrow: 'Projects',
+    title: 'Systems already at work',
+    lead: 'A selection of the sites we have secured. Every project ends with a handover, training and a number to call.',
+    items: [
+      {
+        name: 'Tuul Logistics Park',
+        sector: 'Warehouse',
+        text: 'A large warehouse yard with trucks arriving day and night. We replaced guard rounds with camera zones and an automatic gate reader.',
+        figure: '48',
+        result: 'cameras, no blind spots at the gates',
+      },
+      {
+        name: 'Altan Retail Group',
+        sector: 'Retail',
+        text: 'Six shops, one view. Managers see every till and entrance from one screen, and alerts go to a phone instead of a monitor.',
+        figure: '6',
+        result: 'shops on one live view',
+      },
+      {
+        name: 'Naran Clinic',
+        sector: 'Healthcare',
+        text: 'Staff areas and medicine rooms must stay closed, and open for the right person in seconds. We fitted card and PIN readers with a full entry log.',
+        figure: '27',
+        result: 'doors with card and PIN access',
+      },
+      {
+        name: 'Khan-Uul Business Center',
+        sector: 'Office',
+        text: 'A seven-floor office building with many tenants. Each tenant manages its own staff, while the building keeps one master record.',
+        figure: '40',
+        result: 'tenants, each managing their own staff',
+      },
+      {
+        name: 'Orkhon Data Hall',
+        sector: 'Data centre',
+        text: 'A server hall that must never be entered unseen. A zero-trust network, a two-person door rule and a signed audit log.',
+        figure: '2',
+        result: 'people needed to open the server hall',
+      },
+      {
+        name: 'Gobi Mining Camp',
+        sector: 'Industrial',
+        text: 'A remote camp with an unreliable link. Cameras analyse video on the device and send only alerts, so the system works even when the connection is down.',
+        figure: '30',
+        result: 'days of footage kept on site',
+      },
+    ],
+  },
+  about: {
+    eyebrow: 'About us',
+    title: 'Security, done right the first time',
+    lead: 'SENTINEL AI is a team of engineers in Ulaanbaatar who build security systems the way they would want them built for their own homes.',
+    storyTitle: 'Our story',
+    story: [
+      'We started after seeing too many buildings with expensive cameras that nobody watched and doors that anyone could open. The equipment was fine. The way it was put together was not.',
+      'So we built a company around doing the whole job: planning, installing, securing the network, training the people, and picking up the phone afterwards. Fast, because we have done it many times. Correct, because we test everything before we leave.',
+    ],
+    valuesTitle: 'What we stand for',
+    values: [
+      { title: 'Done right, not just fast', text: 'We install quickly, and we test everything twice before we call it finished.' },
+      { title: 'Nothing trusted by default', text: 'Every device, person and request has to prove itself, including ours.' },
+      { title: 'Plain language', text: 'You get clear reports and straight answers, not jargon.' },
+    ],
+    stats: [
+      { value: '12', label: 'systems deployed' },
+      { value: '340', label: 'cameras online' },
+      { value: '2 days', label: 'typical installation time' },
+      { value: '24/7', label: 'monitoring and support' },
+    ],
+    ctaTitle: 'Want to see how we would secure your site?',
+    ctaButton: 'Talk to us',
+  },
+  team: {
+    eyebrow: 'Team',
+    title: 'The people behind the system',
+    lead: 'Four engineers and operators who answer your calls.',
+    members: [
+      {
+        name: 'Bat-Erdene Ganbold',
+        role: 'Founder and CEO',
+        bio: 'Built his first security network in 2014. Still walks every site before a plan is signed.',
+      },
+      {
+        name: 'Solongo Tserendorj',
+        role: 'Head of Security Engineering',
+        bio: 'Designs the zero-trust networks. Believes a good design is one you can explain in two minutes.',
+      },
+      {
+        name: 'Temuulen Dorj',
+        role: 'AI and Vision Lead',
+        bio: 'Trains the models that run on our cameras, and tests them in snow, dust and bad light.',
+      },
+      {
+        name: 'Anu Enkhbat',
+        role: 'Client Operations',
+        bio: 'Plans installations and answers the phone. If something needs fixing, she is the first to know.',
+      },
+    ],
+  },
+  contact: {
+    eyebrow: 'Contact',
+    title: 'Talk to an engineer',
+    lead: 'Tell us what you want to protect. We answer within one working day.',
+    formTitle: 'Send us a message',
+    detailsTitle: 'Contact details',
+    addressLabel: 'Address',
+    phoneLabel: 'Phone',
+    emailLabel: 'E-mail',
+    hoursLabel: 'Opening hours',
+    replyNote: 'We reply within one working day.',
+  },
+  quote: {
+    eyebrow: 'Get a quote',
+    title: 'Tell us about your site',
+    lead: 'A few details are enough. An engineer will call you to agree the next step.',
+  },
+  legal: {
+    updated: 'Last updated: 21 November 2026',
+    privacy: {
+      title: 'Privacy policy',
+      sections: [
+        { heading: 'Who we are', text: 'SENTINEL AI, Khan-Uul District, Ulaanbaatar, phone 9007 0740, is responsible for the personal data described here.' },
+        { heading: 'What we collect', text: 'Only what you type into the contact and quote forms: name, company, e-mail address, phone number and your message. The site does not use analytics or advertising trackers.' },
+        { heading: 'Why, and for how long', text: 'We use it to answer your request and to prepare a quote. We delete contact messages after 24 months, and quote requests after 36 months unless you become a customer.' },
+        { heading: 'Your rights', text: 'You may ask to see, correct or delete your data at any time by calling or writing to us. We do not sell your data, and we share it only with service providers who store it for us under contract.' },
+      ],
+    },
+    terms: {
+      title: 'Terms of use',
+      sections: [
+        { heading: 'Using this site', text: 'The site gives general information about our services. Nothing on it is a binding offer until we confirm a quote in writing.' },
+        { heading: 'Quotes', text: 'Prices and specifications in a quote are valid for 30 days. Product specifications on this site are indicative and may change.' },
+        { heading: 'Our content', text: 'Texts, drawings and 3D models on this site belong to SENTINEL AI or are used under their licences. Please do not copy them without permission.' },
+        { heading: 'Liability', text: 'We take care to keep the site correct and available, but we cannot promise that it will always be free of errors or interruptions.' },
+      ],
+    },
+    cookies: {
+      title: 'Cookie policy',
+      sections: [
+        { heading: 'No tracking cookies', text: 'This site does not set cookies and does not use analytics or advertising trackers.' },
+        { heading: 'What is stored in your browser', text: 'Only your language choice (EN or MN), saved in your browser’s local storage so the site opens in the language you picked. It never leaves your device.' },
+        { heading: 'Third-party content', text: 'Fonts load from Google Fonts and the 3D background from Spline. These providers receive your IP address when your browser requests the files, as they do on any site that uses them.' },
+        { heading: 'Your choice', text: 'You can clear local storage in your browser settings at any time. The site then opens in Mongolian again.' },
+      ],
+    },
+  },
+};
+
+export type PagesMessages = DeepStrings<typeof pagesEn>;
+```
+
+### `src/i18n/pages.mn.ts`
+
+```ts
+import type { PagesMessages } from './pages.en';
+
+// Lists run in the same order as SERVICES and PRODUCT_SLUGS in shared/constants.js.
+export const pagesMn: PagesMessages = {
+  services: {
+    eyebrow: 'Үйлчилгээ',
+    title: 'Төлөвлөж, суурилуулж, хянадаг хамгаалалт',
+    lead: 'Дангаар нь ч, хамтад нь ч ажилладаг дөрвөн үйлчилгээ. Бүгд өөрсдийн баталгаа өгдөг систем болж дуусна.',
+    quote: 'Үүнд үнийн санал авах',
+    items: [
+      {
+        title: 'Хиймэл оюун ухаант хяналт',
+        summary: 'Харсан зүйлээ ойлгодог, зөвхөн чухал дохиог өгдөг камерууд.',
+        text: 'Бид байгууламжаар тойрч камерын байршлыг төлөвлөнө, бичлэгийг төхөөрөмж дээр нь шинжилдэг камер суурилуулж, нэг шууд дэлгэцэд холбоно. Хүн, тээврийн хэрэгсэл, ер бусын хөдөлгөөнийг шууд таньдаг тул таны баг олон цагийн бичлэгийн оронд хэдхэн чухал үйл явдлыг хардаг.',
+        points: [
+          'Байгууламжийн үзлэг, камерын байршлын төлөвлөгөө',
+          'Хүн, тээврийн хэрэгслийг төхөөрөмж дээр таних',
+          'Утас, дэлгэц дээрх шууд дүрс ба дохио',
+          'Бичлэг хадгалах хугацааг таны дүрмээр тохируулах',
+        ],
+      },
+      {
+        title: 'Ухаалаг нэвтрэх хяналт',
+        summary: 'Хэн орж болохыг мэддэг, хэн орсныг тэмдэглэдэг хаалгууд.',
+        text: 'Бид карт, PIN код, утсаар нэвтэрдэг уншигч, хянагч суурилуулна. Дүрмийг хүн, хаалга, цагаар нэг удаа заахад хаа сайгүй мөрдөгдөнө. Алдсан картыг секундын дотор хаах бөгөөд нэвтрэлт бүр бүртгэгдэнэ.',
+        points: [
+          'Карт, PIN код, утсаар нэвтрэх',
+          'Хүн, хаалга, цагийн хуваарьт суурилсан дүрэм',
+          'Алдсан картыг тэр дор нь хаах',
+          'Хайж, экспортолж болох нэвтрэлтийн бүртгэл',
+        ],
+      },
+      {
+        title: 'Zero-trust сүлжээ',
+        summary: 'Төхөөрөмж, хэрэглэгч бүр өөрийгөө баталдаг сүлжээ.',
+        text: 'Камер, уншигч нь компанийн сүлжээнд нэвтрэх дуртай зам юм. Бид тэдгээрийг оффисын сүлжээнээс тусгаарлаж, төхөөрөмж бүрт өөрийн гэрчилгээ олгож, тус бүрт хэрэгтэй урсгалыг л зөвшөөрнө. Дотор байгаа гэсэн шалтгаанаар юунд ч итгэхгүй.',
+        points: [
+          'Хамгаалалтын төхөөрөмжид тусдаа сүлжээ',
+          'Төхөөрөмж бүрт гэрчилгээ',
+          'Төхөөрөмж бүрт хэрэгтэй урсгалыг л нээх',
+          'Үл мэдэгдэх төхөөрөмжийн дохио',
+        ],
+      },
+      {
+        title: 'Аюулгүй байдлын аудит ба сургалт',
+        summary: 'Эрсдлийн тод дүр зураг, юу хийхээ мэддэг баг.',
+        text: 'Бид таны байгууламжаар явж, хаалга, камер, сүлжээг шалгаж, ойлгомжтой хэлээр товч тайлан, эрэмбэлсэн засварын жагсаалт бичнэ. Дараа нь ажилтнуудыг богино дадлагаар сургаж, цаасан дээрх төлөвлөгөөг дадал болгоно.',
+        points: [
+          'Байгууламж дээрх үнэлгээ',
+          'Эрэмбэтэй, ойлгомжтой тайлан',
+          'Ажилтны дадлага, шалгах хуудас',
+          'Гурван сарын дараах давтан шалгалт',
+        ],
+      },
+    ],
+    process: {
+      title: 'Бид хэрхэн ажилладаг',
+      lead: 'Байгууламж бүр дээр ижил дөрвөн алхам, юу ч санамсаргүй үлдэхгүй.',
+      steps: [
+        { title: 'Үнэлэх', text: 'Бид байгууламжаар явж, санаа зовнилыг тань сонсож, юуг хамгаалахыг жагсаана.' },
+        { title: 'Зохиох', text: 'Та тод төлөвлөгөө, тогтсон үнэ, огноо хүлээн авна.' },
+        { title: 'Суурилуулах', text: 'Манай инженерүүд төхөөрөмж бүрийг суурилуулж, шалгана. Ихэвчлэн хэдхэн хоногт, аль болох саадгүй.' },
+        { title: 'Хянах', text: 'Бид үргэлжлүүлэн харна: шинэчлэл, эрүүл мэндийн шалгалт, хариулдаг утасны дугаар.' },
+      ],
+    },
+  },
+  products: {
+    eyebrow: 'Бүтээгдэхүүн',
+    title: 'Хамтад нь шалгасан гурван тулгуур',
+    lead: 'Камер, хаалганы уншигч, тэдгээрийг холбосон сүлжээ. Тус бүрийг 3D-ээр эргүүлж үзээрэй.',
+    items: [
+      {
+        tagline: 'Хиймэл оюун ухаант камер',
+        text: 'Бичлэгийг төхөөрөмж дээрээ шинжилдэг авсаархан камер. Хүнийг сүүдрээс, тээврийн хэрэгслийг амьтнаас ялгаж, секундын дотор дохио өгнө. Сүлжээ тасарсан ч ажилласаар байна.',
+        specs: [
+          { label: 'Мэдрэгч', value: '8 MP, 4K бичлэг' },
+          { label: 'Шөнийн хараа', value: '30 м хүртэл' },
+          { label: 'Төхөөрөмж дээрх AI', value: 'хүн, тээврийн хэрэгсэл, нэвтрэлт' },
+          { label: 'Хамгаалалт', value: 'IP67, −30-аас +55 °C' },
+          { label: 'Тэжээл', value: 'PoE (802.3af) стандарт' },
+        ],
+      },
+      {
+        tagline: 'Товчлууртай нэвтрэх уншигч',
+        text: 'Нарийхан нэг хавтан дахь уншигч ба товчлуур. Ажилтнууд карт, PIN код, утсаараа хаалга онгойлгоно, нэвтрэлт бүр аудитын бүртгэлд орно. Дүрэм төхөөрөмж дээр хадгалагддаг тул сүлжээ тасарсан үед ч хаалга ажиллана.',
+        specs: [
+          { label: 'Нэвтрэх хэрэгсэл', value: 'карт, PIN код, утас (NFC)' },
+          { label: 'Хэрэглэгч', value: 'уншигч бүрт 5,000 хүртэл' },
+          { label: 'Хамгаалалт', value: 'IP65, гэрэлтэй товчлуур' },
+          { label: 'Тэжээл', value: 'PoE эсвэл 12 В тогтмол гүйдэл' },
+          { label: 'Сүлжээгүйд ажиллах', value: 'тийм, дүрмээ хадгална' },
+        ],
+      },
+      {
+        tagline: 'Удирдлагатай PoE сүлжээний свитч',
+        text: 'Системийг холбодог сүлжээний свитч. Камер, уншигчийг нэг кабелиар тэжээж, тусдаа хаалттай сүлжээнд байлгадаг тул эвдэрсэн төхөөрөмж оффисын компьютерт хүрч чадахгүй.',
+        specs: [
+          { label: 'Порт', value: '8 × Gigabit PoE+ порт' },
+          { label: 'PoE хүчин чадал', value: '120 Вт' },
+          { label: 'Аюулгүй байдал', value: 'VLAN, 802.1X, портын хамгаалалт' },
+          { label: 'Суурилуулалт', value: 'ширээн дээр эсвэл тавиурт' },
+          { label: 'Бүртгэл', value: 'гарын үсэгтэй, 90 хоног хадгална' },
+        ],
+      },
+    ],
+  },
+  projects: {
+    eyebrow: 'Төслүүд',
+    title: 'Аль хэдийн ажиллаж буй системүүд',
+    lead: 'Бидний хамгаалсан байгууламжаас хэдэн жишээ. Төсөл бүр хүлээлгэн өгөх, сургах, залгах дугаартайгаар дуусна.',
+    items: [
+      {
+        name: 'Туул Логистик Парк',
+        sector: 'Агуулах',
+        text: 'Өдөр шөнөгүй ачааны машин ирдэг том агуулахын хашаа. Харуулын тойргийг камерын бүс, хаалганы автомат уншигчаар сольсон.',
+        figure: '48',
+        result: 'камер, хаалганд сохор цэггүй',
+      },
+      {
+        name: 'Алтан Ритейл Групп',
+        sector: 'Худалдаа',
+        text: 'Зургаан дэлгүүр, нэг дэлгэц. Менежерүүд бүх касс, орц гарцыг нэг дэлгэцээс харж, дохио монитор биш утсанд очдог.',
+        figure: '6',
+        result: 'дэлгүүр нэг шууд дүрсэнд',
+      },
+      {
+        name: 'Наран Клиник',
+        sector: 'Эрүүл мэнд',
+        text: 'Ажилтны бүс, эмийн өрөө хаалттай байх ёстой, зөв хүнд секундын дотор нээгдэх ёстой. Карт, PIN кодтой уншигч, бүрэн бүртгэлтэйгээр суурилуулсан.',
+        figure: '27',
+        result: 'хаалга карт, PIN кодоор нэвтэрдэг',
+      },
+      {
+        name: 'Хан-Уул Бизнес Центр',
+        sector: 'Оффис',
+        text: 'Олон түрээслэгчтэй долоон давхар оффисын барилга. Түрээслэгч бүр өөрийн ажилтнаа удирдаж, барилга нэг эх бүртгэлтэй.',
+        figure: '40',
+        result: 'түрээслэгч, бүр өөрийн ажилтнаа удирддаг',
+      },
+      {
+        name: 'Орхон Дата Холл',
+        sector: 'Дата төв',
+        text: 'Хэн ч үл мэдэгдэн орж болохгүй серверийн танхим. Zero-trust сүлжээ, хоёр хүний хаалганы дүрэм, гарын үсэгтэй аудитын бүртгэл.',
+        figure: '2',
+        result: 'хүн серверийн танхимыг нээхэд шаардлагатай',
+      },
+      {
+        name: 'Говийн Уурхайн Бааз',
+        sector: 'Үйлдвэр',
+        text: 'Холболт найдваргүй алслагдсан бааз. Камер бичлэгийг төхөөрөмж дээр шинжилж зөвхөн дохио илгээдэг тул холболт тасарсан ч систем ажиллана.',
+        figure: '30',
+        result: 'хоногийн бичлэг байгууламж дээр хадгалагдана',
+      },
+    ],
+  },
+  about: {
+    eyebrow: 'Бидний тухай',
+    title: 'Хамгаалалтыг анхнаас нь зөв хийнэ',
+    lead: 'SENTINEL AI бол Улаанбаатар дахь инженерүүдийн баг бөгөөд хамгаалалтын системийг өөрсдийн гэрт хийлгэхийг хүссэн шигээ бүтээдэг.',
+    storyTitle: 'Бидний түүх',
+    story: [
+      'Бид үнэтэй камертай ч хэн ч харадаггүй, хэн ч нээж болох хаалгатай барилгыг хэтэрхий олон харсны дараа эхэлсэн. Тоног төхөөрөмж муугүй байсан. Харин түүнийг угсарсан арга муу байлаа.',
+      'Тиймээс бид бүх ажлыг нэгтгэсэн компани байгуулсан: төлөвлөх, суурилуулах, сүлжээг хамгаалах, хүмүүсийг сургах, дараа нь утсаа авах. Олон удаа хийсэн болохоор хурдан. Явахаасаа өмнө бүгдийг шалгадаг болохоор зөв.',
+    ],
+    valuesTitle: 'Бидний баримтлах зарчим',
+    values: [
+      { title: 'Хурдан төдийгүй зөв', text: 'Бид хурдан суурилуулдаг бөгөөд дууссан гэхээсээ өмнө бүгдийг хоёр удаа шалгана.' },
+      { title: 'Өгөгдмөлөөр юунд ч итгэхгүй', text: 'Төхөөрөмж, хүн, хүсэлт бүр өөрийгөө батлах ёстой. Бидний өөрсдийнх ч мөн адил.' },
+      { title: 'Ойлгомжтой хэл', text: 'Та тод тайлан, шулуун хариулт авна, хэт мэргэжлийн үг биш.' },
+    ],
+    stats: [
+      { value: '12', label: 'систем нэвтрүүлсэн' },
+      { value: '340', label: 'камер онлайн' },
+      { value: '2 хоног', label: 'суурилуулалтын ердийн хугацаа' },
+      { value: '24/7', label: 'хяналт ба дэмжлэг' },
+    ],
+    ctaTitle: 'Таны байгууламжийг хэрхэн хамгаалахыг мэдмээр байна уу?',
+    ctaButton: 'Бидэнтэй ярилцах',
+  },
+  team: {
+    eyebrow: 'Баг',
+    title: 'Системийн ард буй хүмүүс',
+    lead: 'Таны дуудлагад хариулдаг дөрвөн инженер, ажилтан.',
+    members: [
+      {
+        name: 'Бат-Эрдэнэ Ганболд',
+        role: 'Үүсгэн байгуулагч, гүйцэтгэх захирал',
+        bio: 'Анхны хамгаалалтын сүлжээгээ 2014 онд бүтээсэн. Төлөвлөгөөнд гарын үсэг зурахаас өмнө байгууламж бүрээр өөрөө явдаг хэвээр.',
+      },
+      {
+        name: 'Солонго Цэрэндорж',
+        role: 'Аюулгүй байдлын инженерчлэлийн дарга',
+        bio: 'Zero-trust сүлжээг зохиодог. Сайн зохиомж гэдэг хоёр минутад тайлбарлаж болдог зохиомж гэдэгт итгэдэг.',
+      },
+      {
+        name: 'Тэмүүлэн Дорж',
+        role: 'AI ба машин харааны ахлах инженер',
+        bio: 'Манай камер дээр ажилладаг загваруудыг сургаж, цас, тоос, муу гэрэлд туршдаг.',
+      },
+      {
+        name: 'Ану Энхбат',
+        role: 'Үйлчлүүлэгчийн менежер',
+        bio: 'Суурилуулалтыг төлөвлөж, утсаа авдаг. Ямар нэг юм засах шаардлагатай бол хамгийн түрүүнд мэддэг нь тэр.',
+      },
+    ],
+  },
+  contact: {
+    eyebrow: 'Холбоо барих',
+    title: 'Инженертэй ярилцаарай',
+    lead: 'Юуг хамгаалахыг хүсч байгаагаа хэлээрэй. Бид нэг ажлын өдрийн дотор хариулна.',
+    formTitle: 'Бидэнд мессеж илгээх',
+    detailsTitle: 'Холбоо барих мэдээлэл',
+    addressLabel: 'Хаяг',
+    phoneLabel: 'Утас',
+    emailLabel: 'И-мэйл',
+    hoursLabel: 'Ажлын цаг',
+    replyNote: 'Бид нэг ажлын өдрийн дотор хариулна.',
+  },
+  quote: {
+    eyebrow: 'Үнийн санал авах',
+    title: 'Байгууламжийнхаа талаар хэлээрэй',
+    lead: 'Хэдэн мэдээлэл л хангалттай. Инженер тантай утсаар холбогдож дараагийн алхмыг тохирно.',
+  },
+  legal: {
+    updated: 'Сүүлд шинэчилсэн: 2026 оны 11 дүгээр сарын 21',
+    privacy: {
+      title: 'Нууцлалын бодлого',
+      sections: [
+        { heading: 'Бид хэн бэ', text: 'SENTINEL AI (Улаанбаатар хот, Хан-Уул дүүрэг, утас 9007 0740) энд тайлбарласан хувийн мэдээллийг хариуцна.' },
+        { heading: 'Бид юу цуглуулдаг', text: 'Зөвхөн таны холбоо барих болон үнийн саналын маягтад бичсэн зүйлийг: нэр, байгууллага, и-мэйл хаяг, утасны дугаар, мессеж. Сайт нь аналитик, сурталчилгааны мөшгигч ашигладаггүй.' },
+        { heading: 'Яагаад, хэр удаан', text: 'Бид таны хүсэлтэд хариулах, үнийн санал бэлтгэхэд ашиглана. Холбоо барих мессежийг 24 сарын дараа, үнийн саналын хүсэлтийг 36 сарын дараа устгана. Та үйлчлүүлэгч болсон бол энэ нь хамаарахгүй.' },
+        { heading: 'Таны эрх', text: 'Та хэзээ ч утсаар залгаж эсвэл бидэнд бичиж өөрийн мэдээллийг харах, засах, устгуулахыг хүсч болно. Бид мэдээллийг зардаггүй бөгөөд зөвхөн гэрээний үндсэн дээр бидэнд хадгалж өгдөг үйлчилгээ үзүүлэгчтэй хуваалцана.' },
+      ],
+    },
+    terms: {
+      title: 'Ашиглах нөхцөл',
+      sections: [
+        { heading: 'Сайтыг ашиглах', text: 'Сайт нь манай үйлчилгээний талаар ерөнхий мэдээлэл өгнө. Бид үнийн саналыг бичгээр баталгаажуулах хүртэл сайт дээрх юу ч албан ёсны санал биш.' },
+        { heading: 'Үнийн санал', text: 'Үнийн саналд буй үнэ, үзүүлэлт 30 хоног хүчинтэй. Энэ сайт дээрх бүтээгдэхүүний үзүүлэлт чиглэлийн шинжтэй бөгөөд өөрчлөгдөж болно.' },
+        { heading: 'Манай агуулга', text: 'Сайт дээрх текст, зураг, 3D загвар нь SENTINEL AI-ийнх эсвэл тэдгээрийн лицензийн дагуу ашиглагдаж байгаа. Зөвшөөрөлгүйгээр хуулбарлахгүй байхыг хүсье.' },
+        { heading: 'Хариуцлага', text: 'Бид сайтыг үнэн зөв, тасралтгүй байлгахыг хичээдэг ч алдаа, саатал огт гарахгүй гэж амлаж чадахгүй.' },
+      ],
+    },
+    cookies: {
+      title: 'Күүкигийн бодлого',
+      sections: [
+        { heading: 'Мөшгих күүки байхгүй', text: 'Энэ сайт күүки тохируулдаггүй бөгөөд аналитик, сурталчилгааны мөшгигч ашигладаггүй.' },
+        { heading: 'Таны хөтөч дээр юу хадгалагддаг', text: 'Зөвхөн таны сонгосон хэл (EN эсвэл MN) хөтчийн локал санах ойд хадгалагдаж, сайт таны сонгосон хэлээр нээгддэг. Энэ нь таны төхөөрөмжөөс хэзээ ч гардаггүй.' },
+        { heading: 'Гуравдагч талын агуулга', text: 'Фонтыг Google Fonts-оос, 3D дэвсгэрийг Spline-аас ачаалдаг. Эдгээр үйлчилгээ үзүүлэгч нар таны хөтөч файлыг хүсэх үед IP хаягийг хүлээн авдаг, үүнийг ашигладаг бүх сайт дээр адил.' },
+        { heading: 'Таны сонголт', text: 'Та хөтчийнхөө тохиргооноос локал санах ойг хэзээ ч цэвэрлэж болно. Тэгвэл сайт дахин Монгол хэлээр нээгдэнэ.' },
+      ],
+    },
+  },
+};
+```
+
+### `scripts/check-i18n.mjs`
+
+Run it as `npm run check:i18n` (`node scripts/check-i18n.mjs`). It must print `i18n ok`.
+
+```js
+// Fails when the English and Mongolian message trees disagree, or when a Mongolian value was left untranslated.
+import { en } from '../src/i18n/en.ts';
+import { mn } from '../src/i18n/mn.ts';
+import { pagesEn } from '../src/i18n/pages.en.ts';
+import { pagesMn } from '../src/i18n/pages.mn.ts';
+
+const flatten = (value, prefix = '', out = new Map()) => {
+  if (typeof value === 'string') out.set(prefix, value);
+  else if (Array.isArray(value)) value.forEach((item, i) => flatten(item, `${prefix}.${i}`, out));
+  else for (const [key, item] of Object.entries(value)) flatten(item, prefix ? `${prefix}.${key}` : key, out);
+  return out;
+};
+
+const placeholders = (text) => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
+const hasCyrillic = (text) => /[Ѐ-ӿ]/.test(text);
+const letterless = (text) =>
+  !/\p{L}/u.test(
+    text
+      .replace(/\{\w+\}/g, '')
+      .replace(/SENTINEL AI/g, '')
+      .replace(/\b[A-Z]{2}-\d\b/g, ''),
+  );
+const looksLikeAddress = (text) => /^(https?:\/\/\S+|[^\s@]+@[^\s@]+\.\S+)$/.test(text);
+
+const pairs = [
+  ['en', 'mn', flatten(en), flatten(mn)],
+  ['pages.en', 'pages.mn', flatten(pagesEn), flatten(pagesMn)],
+];
+
+const problems = [];
+for (const [enName, mnName, a, b] of pairs) {
+  for (const key of a.keys()) if (!b.has(key)) problems.push(`${mnName}: missing key ${key}`);
+  for (const key of b.keys()) if (!a.has(key)) problems.push(`${mnName}: extra key ${key}`);
+  for (const [key, mnValue] of b) {
+    const enValue = a.get(key);
+    if (enValue === undefined) continue;
+    if (mnValue === '' || enValue === '') problems.push(`${key}: empty value`);
+    if (!hasCyrillic(mnValue) && !letterless(mnValue) && !looksLikeAddress(mnValue)) problems.push(`${mnName}: ${key} has no Cyrillic`);
+    if (placeholders(enValue) !== placeholders(mnValue)) problems.push(`${key}: placeholders differ`);
+    if (mnValue.length > 60 && mnValue.length > enValue.length * 2.2) problems.push(`${mnName}: ${key} is more than 2.2x the English length`);
+  }
+}
+
+if (problems.length > 0) {
+  console.error(problems.join('\n'));
+  process.exit(1);
+}
+console.log('i18n ok');
+```
+
+## Database
+
+**Yes, the site needs a small database, but only for what visitors send in.** Services, products, projects, team, copy and every word of the interface are static content and stay in code.
+
+| Lives in code (static) | Lives in the database |
+|---|---|
+| Services, products, projects, team, UI strings, page copy, legal texts | `contact_messages` (topics: general question, book a call, support, careers, press) and `quote_requests` |
+
+### Hard rules
+
+1. **Do not use Firebase, Firestore, the Supabase client SDK (`@supabase/supabase-js`) or any other backend-as-a-service.** Do not add `firebase`, `firebase-admin`, rules files, blueprint files or an "add a database" integration. The database is plain PostgreSQL reached only from the Express server with the `pg` package. The browser never talks to the database; it calls `/api/contact`, `/api/quote` and `/api/health` only.
+2. Every query is parameterised (`$1, $2, ...`). Never build SQL by joining strings.
+3. Locally (no `DATABASE_URL`) the same repository interface runs on `node:sqlite`, with the file at `DB_PATH` (default `./data/sentinel.db`, git-ignored). Production sets `DATABASE_URL` and uses PostgreSQL.
+4. Do not log names, e-mail addresses, phone numbers or message bodies. Log a route label and an error code only (`[contact] ECONNRESET`).
+5. TLS to PostgreSQL is always verified: `ca` + `rejectUnauthorized: true` when `PG_CA_CERT` is set, system certificate authorities in production otherwise, and no TLS only for a local database. Never write `rejectUnauthorized: false` anywhere.
+6. Every list of allowed values (topics, services, site types, products, contact methods, languages) exists once in `shared/constants.js`. The SQL `CHECK` lists must equal it; a test enforces that.
+
+### Behaviour
+
+- `POST /api/contact` and `POST /api/quote`: JSON bodies up to 16 KB, validated by the shared zod schemas. The client generates `requestId` once per form fill; the insert uses `ON CONFLICT (request_id) DO NOTHING`, so a double click or a retry stores one row and still answers success. A filled honeypot (`website`) answers `200 { ok: true }` and stores nothing, before any validation. Success is `201 { ok: true }`. Validation failure is `400 { ok: false, code: "invalid", fields: { name: "required" | "tooLong" | "email" | "phone" | "invalid" | "consent" } }`.
+- Both are rate limited to 10 per 15 minutes per address (`429 { ok: false, code: "rate_limited" }`).
+- `GET /api/health`: `{ ok: true }` after `ping()` succeeds, otherwise `503 { ok: false, code: "unavailable" }`. It is cheap; a hosting health check or an uptime ping should use it.
+- If the database cannot be reached, **the server still starts and serves the whole site**. It keeps retrying in the background (2 s, 4 s, 8 s ... capped at 30 s) and the write endpoints answer `503 { ok: false, code: "unavailable" }` until it succeeds; the forms show `t.form.unavailable`.
+- Every `/api` error is JSON (`invalid_json` 400, `payload_too_large` 413, `not_found` 404, `server_error` 500). Responses never include stored data or stack traces.
+- Unknown files (`/assets/missing.js`, `/models/x.glb`, `/favicon.ico`) answer 404, never the HTML page. Unknown **pages** answer the HTML page **with status 404** so the themed 404 renders and crawlers learn the page does not exist (`isKnownRoute`).
+
+### Reference code (copy exactly)
+
+These files were written and tested against Express 4, helmet 8, express-rate-limit 8, zod 4, pg 8 and Node 22.23 (15 passing tests, below). Put them where the structure tree says. Do not "simplify" them; if a newer library version needs a different call, change that call and keep the behaviour.
+
+#### `shared/constants.js`
+
+```js
+export const SERVICES = ['surveillance', 'access', 'network', 'audit'];
+export const SITE_TYPES = ['office', 'retail', 'warehouse', 'residential', 'industrial', 'other'];
+export const PRODUCT_SLUGS = ['camera', 'reader', 'hub'];
+export const CONTACT_TOPICS = ['general', 'call', 'support', 'careers', 'press'];
+export const PREFERRED_CONTACT = ['phone', 'email'];
+export const LEGAL_SLUGS = ['privacy', 'terms', 'cookies'];
+export const LOCALES = ['mn', 'en'];
+```
+
+#### `shared/routes.js`
+
+```js
+import { LEGAL_SLUGS, PRODUCT_SLUGS } from './constants.js';
+
+export const STATIC_ROUTES = ['/', '/services', '/products', '/projects', '/about', '/team', '/contact', '/quote'];
+
+/** True when the client router has a real page for this path. The server uses it to choose 200 or 404. */
+export function isKnownRoute(pathname) {
+  const lower = pathname.toLowerCase();
+  const path = lower.length > 1 ? lower.replace(/\/+$/, '') : lower;
+  if (STATIC_ROUTES.includes(path)) return true;
+  const [, section, slug, ...rest] = path.split('/');
+  if (!slug || rest.length > 0) return false;
+  if (section === 'products') return PRODUCT_SLUGS.includes(slug);
+  if (section === 'legal') return LEGAL_SLUGS.includes(slug);
+  return false;
+}
+```
+
+#### `shared/schemas.js`
+
+```js
+import { z } from 'zod';
+import { CONTACT_TOPICS, LOCALES, PREFERRED_CONTACT, PRODUCT_SLUGS, SERVICES, SITE_TYPES } from './constants.js';
+
+// Every message is a code. The client maps it to t.form.errors.<code>.
+export const ERROR_CODES = ['required', 'tooLong', 'email', 'phone', 'invalid', 'consent'];
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const PHONE_PATTERN = /^\+?[0-9][0-9 ()-]{5,38}$/;
+
+const text = (max) => z.string().trim().min(1, 'required').max(max, 'tooLong');
+const optionalText = (max) => z.string().trim().max(max, 'tooLong').default('');
+const email = z.string().trim().toLowerCase().min(1, 'required').max(254, 'tooLong').regex(EMAIL_PATTERN, 'email');
+const phone = z.string().trim().min(1, 'required').max(40, 'tooLong').regex(PHONE_PATTERN, 'phone');
+const optionalPhone = z
+  .string()
+  .trim()
+  .max(40, 'tooLong')
+  .refine((value) => value === '' || PHONE_PATTERN.test(value), 'phone')
+  .default('');
+
+const common = {
+  requestId: z.string().regex(/^[A-Za-z0-9-]{8,64}$/, 'invalid'),
+  fullName: text(120),
+  email,
+  consent: z.boolean().refine((value) => value === true, 'consent'),
+  locale: z.enum(LOCALES).default('mn'),
+  website: z.string().max(200).default(''),
+};
+
+export const contactSchema = z.object({
+  ...common,
+  phone: optionalPhone,
+  topic: z.enum(CONTACT_TOPICS),
+  message: text(2000),
+});
+
+export const quoteSchema = z.object({
+  ...common,
+  company: optionalText(120),
+  phone,
+  service: z.enum(SERVICES),
+  siteType: z.enum(SITE_TYPES),
+  product: z.enum(['', ...PRODUCT_SLUGS]).default(''),
+  preferredContact: z.enum(PREFERRED_CONTACT).default('phone'),
+  details: text(2000),
+});
+
+/** Turns a zod error into `{ fieldName: code }` using only the codes above. `input` is the raw body. */
+export function fieldCodes(error, input) {
+  const fields = {};
+  for (const issue of error.issues) {
+    const name = String(issue.path[0] ?? 'form');
+    if (name in fields) continue;
+    if (ERROR_CODES.includes(issue.message)) fields[name] = issue.message;
+    else fields[name] = input?.[name] === undefined ? 'required' : 'invalid';
+  }
+  return fields;
+}
+```
+
+#### `functions/lib/errorCode.js`
+
+```js
+/** A short, safe label for logs. Never the message: messages can contain visitor data. */
+export function errorCode(error) {
+  const code = error && typeof error === 'object' ? error.code : undefined;
+  return typeof code === 'string' && /^[A-Za-z0-9_]{1,40}$/.test(code) ? code : 'unknown';
+}
+```
+
+#### `functions/api/forms.js`
+
+```js
+import { contactSchema, fieldCodes, quoteSchema } from '../../shared/schemas.js';
+import { errorCode } from '../lib/errorCode.js';
+
+const isHoneypotFilled = (body) => typeof body?.website === 'string' && body.website.trim() !== '';
+
+function formHandler({ schema, name, isDbReady, save }) {
+  return async (req, res) => {
+    // A bot that fills the hidden field gets the normal answer and nothing is stored.
+    if (isHoneypotFilled(req.body)) return res.status(200).json({ ok: true });
+
+    const parsed = schema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ ok: false, code: 'invalid', fields: fieldCodes(parsed.error, req.body) });
+    if (!isDbReady()) return res.status(503).json({ ok: false, code: 'unavailable' });
+
+    try {
+      await save(parsed.data);
+      return res.status(201).json({ ok: true });
+    } catch (error) {
+      console.error(`[${name}] ${errorCode(error)}`);
+      return res.status(503).json({ ok: false, code: 'unavailable' });
+    }
+  };
+}
+
+export const contactHandler = (repo, isDbReady) =>
+  formHandler({
+    schema: contactSchema,
+    name: 'contact',
+    isDbReady,
+    save: (data) =>
+      repo.createContactMessage({
+        requestId: data.requestId,
+        fullName: data.fullName,
+        email: data.email,
+        phone: data.phone || null,
+        topic: data.topic,
+        message: data.message,
+        locale: data.locale,
+        consentGiven: data.consent,
+      }),
+  });
+
+export const quoteHandler = (repo, isDbReady) =>
+  formHandler({
+    schema: quoteSchema,
+    name: 'quote',
+    isDbReady,
+    save: (data) =>
+      repo.createQuoteRequest({
+        requestId: data.requestId,
+        fullName: data.fullName,
+        company: data.company || null,
+        email: data.email,
+        phone: data.phone,
+        service: data.service,
+        siteType: data.siteType,
+        product: data.product || null,
+        preferredContact: data.preferredContact,
+        details: data.details,
+        locale: data.locale,
+        consentGiven: data.consent,
+      }),
+  });
+```
+
+#### `functions/app.js`
+
+```js
+import path from 'node:path';
+import express from 'express';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
+import { isKnownRoute } from '../shared/routes.js';
+import { contactHandler, quoteHandler } from './api/forms.js';
+import { errorCode } from './lib/errorCode.js';
+
+/**
+ * Builds the Express app. server.ts supplies the real repository and Vite; tests supply fakes.
+ * @param {{ repo: object, isDbReady: () => boolean, distDir: string, isProduction: boolean, devMiddleware?: import('express').RequestHandler }} options
+ */
+export function createApp({ repo, isDbReady, distDir, isProduction, devMiddleware }) {
+  const app = express();
+  app.set('trust proxy', 1);
+  app.use(
+    helmet({
+      contentSecurityPolicy: false, // fonts, the Spline scene and the 3D models come from other hosts
+      frameguard: false, // the AI Studio preview runs the app inside an iframe
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: false,
+    }),
+  );
+
+  const formLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    handler: (_req, res) => res.status(429).json({ ok: false, code: 'rate_limited' }),
+  });
+
+  app.use('/api', express.json({ limit: '16kb' }));
+  app.get('/api/health', async (_req, res) => {
+    try {
+      if (!isDbReady()) throw new Error('not ready');
+      await repo.ping();
+      return res.json({ ok: true });
+    } catch {
+      return res.status(503).json({ ok: false, code: 'unavailable' });
+    }
+  });
+  app.post('/api/contact', formLimiter, contactHandler(repo, isDbReady));
+  app.post('/api/quote', formLimiter, quoteHandler(repo, isDbReady));
+  app.use('/api', (_req, res) => res.status(404).json({ ok: false, code: 'not_found' }));
+
+  if (isProduction) {
+    app.use('/assets', express.static(path.join(distDir, 'assets'), { immutable: true, maxAge: '1y' }));
+    app.use(express.static(distDir, { index: false, maxAge: '1h' })); // includes /models and the favicon
+    app.use((req, res, next) => {
+      if ((req.method !== 'GET' && req.method !== 'HEAD') || path.extname(req.path)) return next();
+      res.setHeader('Cache-Control', 'no-cache');
+      // The client router draws the themed 404; the status code tells crawlers the page does not exist.
+      return res.status(isKnownRoute(req.path) ? 200 : 404).sendFile(path.join(distDir, 'index.html'), { dotfiles: 'deny' });
+    });
+  } else if (devMiddleware) {
+    app.use(devMiddleware);
+  }
+  app.use((_req, res) => res.status(404).type('text/plain').send('Not found'));
+
+  // eslint-disable-next-line no-unused-vars
+  app.use((error, req, res, _next) => {
+    let status = 500;
+    let code = 'server_error';
+    if (error?.type === 'entity.too.large') [status, code] = [413, 'payload_too_large'];
+    else if (error?.type === 'entity.parse.failed') [status, code] = [400, 'invalid_json'];
+    if (status === 500) console.error(`[server] ${errorCode(error)}`);
+    if (req.path.startsWith('/api')) return res.status(status).json({ ok: false, code });
+    return res.status(status).type('text/plain').send(code);
+  });
+
+  return app;
+}
+```
+
+#### `functions/repository/pgConfig.js`
+
+```js
+/** Pool settings for PostgreSQL. TLS is always verified: there is no code path that turns verification off. */
+export function buildPgConfig(env) {
+  const url = new URL(env.DATABASE_URL);
+  url.searchParams.delete('sslmode'); // the explicit `ssl` option below decides
+  const ca = env.PG_CA_CERT ? env.PG_CA_CERT.replace(/\\n/g, '\n') : '';
+  let ssl = false;
+  if (ca) ssl = { ca, rejectUnauthorized: true };
+  else if (env.NODE_ENV === 'production') ssl = { rejectUnauthorized: true };
+  return {
+    connectionString: url.toString(),
+    ssl,
+    max: 5,
+    connectionTimeoutMillis: 5000,
+    idleTimeoutMillis: 30000,
+  };
+}
+```
+
+#### `functions/repository/pgRepo.js`
+
+```js
+import { readFileSync } from 'node:fs';
+import pg from 'pg';
+import { errorCode } from '../lib/errorCode.js';
+import { buildPgConfig } from './pgConfig.js';
+
+export function createPgRepo({ env, schemaPath }) {
+  const pool = new pg.Pool(buildPgConfig(env));
+  // A dropped idle connection emits `error` on the pool; without a listener it would crash the process.
+  pool.on('error', (error) => console.error(`[pg] ${errorCode(error)}`));
+
+  return {
+    async init() {
+      await pool.query(readFileSync(schemaPath, 'utf8'));
+    },
+    async createContactMessage(m) {
+      await pool.query(
+        `INSERT INTO contact_messages
+           (request_id, full_name, email, phone, topic, message, locale, consent_given)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (request_id) DO NOTHING`,
+        [m.requestId, m.fullName, m.email, m.phone, m.topic, m.message, m.locale, m.consentGiven],
+      );
+    },
+    async createQuoteRequest(q) {
+      await pool.query(
+        `INSERT INTO quote_requests
+           (request_id, full_name, company, email, phone, service, site_type, product,
+            preferred_contact, details, locale, consent_given)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         ON CONFLICT (request_id) DO NOTHING`,
+        [q.requestId, q.fullName, q.company, q.email, q.phone, q.service, q.siteType, q.product, q.preferredContact, q.details, q.locale, q.consentGiven],
+      );
+    },
+    async ping() {
+      await pool.query('SELECT 1');
+    },
+    async counts() {
+      const { rows } = await pool.query(
+        `SELECT (SELECT count(*) FROM contact_messages)::int AS contact_messages,
+                (SELECT count(*) FROM quote_requests)::int AS quote_requests`,
+      );
+      return rows[0];
+    },
+    async close() {
+      await pool.end();
+    },
+  };
+}
+```
+
+#### `functions/repository/sqliteRepo.js`
+
+```js
+import { mkdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+
+export function createSqliteRepo({ dbPath, schemaPath }) {
+  let db = null;
+  const handle = () => {
+    if (!db) throw new Error('database is not open');
+    return db;
+  };
+
+  return {
+    async init() {
+      if (dbPath !== ':memory:') mkdirSync(path.dirname(dbPath), { recursive: true });
+      // Loaded only when SQLite is used, so a production server on PostgreSQL never touches it.
+      const { DatabaseSync } = await import('node:sqlite');
+      db = new DatabaseSync(dbPath);
+      db.exec(readFileSync(schemaPath, 'utf8'));
+    },
+    async createContactMessage(m) {
+      handle()
+        .prepare(
+          `INSERT INTO contact_messages
+             (request_id, full_name, email, phone, topic, message, locale, consent_given)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (request_id) DO NOTHING`,
+        )
+        .run(m.requestId, m.fullName, m.email, m.phone ?? null, m.topic, m.message, m.locale, m.consentGiven ? 1 : 0);
+    },
+    async createQuoteRequest(q) {
+      handle()
+        .prepare(
+          `INSERT INTO quote_requests
+             (request_id, full_name, company, email, phone, service, site_type, product,
+              preferred_contact, details, locale, consent_given)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (request_id) DO NOTHING`,
+        )
+        .run(q.requestId, q.fullName, q.company ?? null, q.email, q.phone, q.service, q.siteType, q.product ?? null, q.preferredContact, q.details, q.locale, q.consentGiven ? 1 : 0);
+    },
+    async ping() {
+      handle().prepare('SELECT 1').get();
+    },
+    async counts() {
+      const row = handle()
+        .prepare(`SELECT (SELECT count(*) FROM contact_messages) AS contact_messages,
+                         (SELECT count(*) FROM quote_requests) AS quote_requests`)
+        .get();
+      return { contact_messages: Number(row.contact_messages), quote_requests: Number(row.quote_requests) };
+    },
+    async close() {
+      db?.close();
+      db = null;
+    },
+  };
+}
+```
+
+#### `functions/repository/index.js`
+
+```js
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createPgRepo } from './pgRepo.js';
+import { createSqliteRepo } from './sqliteRepo.js';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+/** PostgreSQL when DATABASE_URL is set (production), otherwise a local SQLite file. */
+export function createRepository(env = process.env) {
+  if (env.DATABASE_URL) return createPgRepo({ env, schemaPath: path.join(root, 'db/schema.postgres.sql') });
+  return createSqliteRepo({
+    dbPath: env.DB_PATH || path.join(root, 'data/sentinel.db'),
+    schemaPath: path.join(root, 'db/schema.sqlite.sql'),
+  });
+}
+```
+
+#### `server.ts`
+
+```ts
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { RequestHandler } from 'express';
+import { createApp } from './functions/app.js';
+import { errorCode } from './functions/lib/errorCode.js';
+import { createRepository } from './functions/repository/index.js';
+
+const root = path.dirname(fileURLToPath(import.meta.url));
+const isProduction = process.env.NODE_ENV === 'production';
+const port = Number(process.env.PORT) || 3000;
+
+const repo = createRepository(process.env);
+let dbReady = false;
+
+// The site starts at once and serves every page; the database connects in the background and retries.
+function connectDatabase(attempt = 0): void {
+  repo.init().then(
+    () => {
+      dbReady = true;
+    },
+    (error: unknown) => {
+      console.error(`[db:init] ${errorCode(error)}`);
+      setTimeout(() => connectDatabase(attempt + 1), Math.min(2000 * 2 ** attempt, 30000));
+    },
+  );
+}
+
+async function main(): Promise<void> {
+  let devMiddleware: RequestHandler | undefined;
+  if (!isProduction) {
+    const { createServer } = await import('vite');
+    const vite = await createServer({ server: { middlewareMode: true }, appType: 'spa' });
+    devMiddleware = vite.middlewares;
+  }
+
+  const app = createApp({
+    repo,
+    isDbReady: () => dbReady,
+    distDir: path.join(root, 'dist'),
+    isProduction,
+    devMiddleware,
+  });
+  const server = app.listen(port, '0.0.0.0', () => {
+    console.log(`[server] listening on ${port}`);
+  });
+  connectDatabase();
+
+  process.on('SIGTERM', () => {
+    server.close(() => {
+      void repo.close().finally(() => process.exit(0));
+    });
+  });
+}
+
+void main();
+```
+
+#### `scripts/db-check.mjs`
+
+```js
+// Connects, runs SELECT 1, prints each table's row count (never row contents) and exits.
+import { createRepository } from '../functions/repository/index.js';
+import { errorCode } from '../functions/lib/errorCode.js';
+
+const repo = createRepository(process.env);
+try {
+  await repo.init();
+  await repo.ping();
+  console.log(await repo.counts());
+  await repo.close();
+} catch (error) {
+  console.error(`db:check failed: ${errorCode(error)}`);
+  process.exitCode = 1;
+}
+```
+
+#### `db/schema.postgres.sql`
+
+The server runs this file on start, and it is safe to paste into the Supabase SQL Editor by hand.
+
+```sql
+CREATE TABLE IF NOT EXISTS contact_messages (
+  id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  request_id    TEXT        NOT NULL UNIQUE,
+  full_name     TEXT        NOT NULL,
+  email         TEXT        NOT NULL,
+  phone         TEXT,
+  topic         TEXT        NOT NULL CHECK (topic IN ('general','call','support','careers','press')),
+  message       TEXT        NOT NULL,
+  locale        TEXT        NOT NULL DEFAULT 'mn' CHECK (locale IN ('mn','en')),
+  consent_given BOOLEAN     NOT NULL,
+  status        TEXT        NOT NULL DEFAULT 'new' CHECK (status IN ('new','handled','spam')),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS quote_requests (
+  id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  request_id        TEXT        NOT NULL UNIQUE,
+  full_name         TEXT        NOT NULL,
+  company           TEXT,
+  email             TEXT        NOT NULL,
+  phone             TEXT        NOT NULL,
+  service           TEXT        NOT NULL CHECK (service IN ('surveillance','access','network','audit')),
+  site_type         TEXT        NOT NULL CHECK (site_type IN ('office','retail','warehouse','residential','industrial','other')),
+  product           TEXT        CHECK (product IS NULL OR product IN ('camera','reader','hub')),
+  preferred_contact TEXT        NOT NULL CHECK (preferred_contact IN ('phone','email')),
+  details           TEXT        NOT NULL,
+  locale            TEXT        NOT NULL DEFAULT 'mn' CHECK (locale IN ('mn','en')),
+  consent_given     BOOLEAN     NOT NULL,
+  status            TEXT        NOT NULL DEFAULT 'new' CHECK (status IN ('new','contacted','closed','spam')),
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_contact_messages_created ON contact_messages (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_quote_requests_created   ON quote_requests (created_at DESC);
+
+-- Supabase exposes public tables through its own web API. The app never uses that API,
+-- so lock it: with RLS on and no policies, the public key can read and write nothing.
+-- The server connects as the database owner, which bypasses RLS.
+ALTER TABLE contact_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quote_requests   ENABLE ROW LEVEL SECURITY;
+```
+
+#### `db/schema.sqlite.sql`
+
+```sql
+CREATE TABLE IF NOT EXISTS contact_messages (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id    TEXT NOT NULL UNIQUE,
+  full_name     TEXT NOT NULL,
+  email         TEXT NOT NULL,
+  phone         TEXT,
+  topic         TEXT NOT NULL CHECK (topic IN ('general','call','support','careers','press')),
+  message       TEXT NOT NULL,
+  locale        TEXT NOT NULL DEFAULT 'mn' CHECK (locale IN ('mn','en')),
+  consent_given INTEGER NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','handled','spam')),
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS quote_requests (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id        TEXT NOT NULL UNIQUE,
+  full_name         TEXT NOT NULL,
+  company           TEXT,
+  email             TEXT NOT NULL,
+  phone             TEXT NOT NULL,
+  service           TEXT NOT NULL CHECK (service IN ('surveillance','access','network','audit')),
+  site_type         TEXT NOT NULL CHECK (site_type IN ('office','retail','warehouse','residential','industrial','other')),
+  product           TEXT CHECK (product IS NULL OR product IN ('camera','reader','hub')),
+  preferred_contact TEXT NOT NULL CHECK (preferred_contact IN ('phone','email')),
+  details           TEXT NOT NULL,
+  locale            TEXT NOT NULL DEFAULT 'mn' CHECK (locale IN ('mn','en')),
+  consent_given     INTEGER NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','contacted','closed','spam')),
+  created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_contact_messages_created ON contact_messages (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_quote_requests_created   ON quote_requests (created_at DESC);
+```
+
+### Tests
+
+`npm test` runs `node --test` (it discovers `tests/*.test.mjs`) and must pass. The files below are the finished tests; add the project's own component tests only if they are quick and need no browser.
+
+#### `tests/helpers.mjs`
+
+```js
+import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createApp } from '../functions/app.js';
+
+export function fakeRepo() {
+  const contacts = new Map();
+  const quotes = new Map();
+  return {
+    contacts,
+    quotes,
+    async init() {},
+    async createContactMessage(m) { if (!contacts.has(m.requestId)) contacts.set(m.requestId, m); },
+    async createQuoteRequest(q) { if (!quotes.has(q.requestId)) quotes.set(q.requestId, q); },
+    async ping() {},
+    async counts() { return { contact_messages: contacts.size, quote_requests: quotes.size }; },
+    async close() {},
+  };
+}
+
+export function tempDist() {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'sentinel-dist-'));
+  writeFileSync(path.join(dir, 'index.html'), '<!doctype html><div id="root"></div>');
+  mkdirSync(path.join(dir, 'assets'));
+  writeFileSync(path.join(dir, 'assets', 'app.js'), 'console.log(1)');
+  return dir;
+}
+
+export async function startApp(overrides = {}) {
+  const repo = overrides.repo ?? fakeRepo();
+  const app = createApp({ repo, isDbReady: () => true, distDir: tempDist(), isProduction: true, ...overrides });
+  const server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  return { base, repo, close: () => new Promise((resolve) => server.close(resolve)) };
+}
+
+export const validContact = (over = {}) => ({
+  requestId: crypto.randomUUID(), fullName: 'Болд Бат', email: 'Bold@Example.com', phone: '9007 0740',
+  topic: 'general', message: 'Сайн байна уу', consent: true, locale: 'mn', website: '', ...over,
+});
+export const validQuote = (over = {}) => ({
+  requestId: crypto.randomUUID(), fullName: 'Болд Бат', company: '', email: 'bold@example.com', phone: '+976 9007 0740',
+  service: 'surveillance', siteType: 'warehouse', product: '', preferredContact: 'phone',
+  details: '48 камер хэрэгтэй', consent: true, locale: 'mn', website: '', ...over,
+});
+
+export const post = (base, url, body, raw) =>
+  fetch(base + url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: raw ?? JSON.stringify(body) });
+```
+
+#### `tests/server.test.mjs`
+
+```js
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { post, startApp, validContact, validQuote } from './helpers.mjs';
+
+test('known client routes return 200 HTML, unknown ones return 404 with the same HTML', async () => {
+  const { base, close } = await startApp();
+  try {
+    for (const p of ['/', '/services', '/products', '/products/camera', '/products/hub/', '/legal/cookies', '/Services']) {
+      const res = await fetch(base + p);
+      assert.equal(res.status, 200, p);
+      assert.match(res.headers.get('content-type'), /text\/html/, p);
+    }
+    for (const p of ['/nope', '/products/toaster', '/legal/imprint', '/products/camera/extra']) {
+      const res = await fetch(base + p);
+      assert.equal(res.status, 404, p);
+      assert.match(await res.text(), /id="root"/, p);
+    }
+  } finally { await close(); }
+});
+
+test('missing files are 404, not the page', async () => {
+  const { base, close } = await startApp();
+  try {
+    for (const p of ['/assets/missing.js', '/models/x.glb', '/favicon.ico']) assert.equal((await fetch(base + p)).status, 404, p);
+    assert.equal((await fetch(base + '/assets/app.js')).status, 200);
+  } finally { await close(); }
+});
+
+test('api errors are JSON', async () => {
+  const { base, close } = await startApp();
+  try {
+    const unknown = await fetch(base + '/api/nope');
+    assert.equal(unknown.status, 404);
+    assert.deepEqual(await unknown.json(), { ok: false, code: 'not_found' });
+    const broken = await post(base, '/api/contact', null, '{"fullName":');
+    assert.equal(broken.status, 400);
+    assert.equal((await broken.json()).code, 'invalid_json');
+    const big = await post(base, '/api/contact', { message: 'x'.repeat(40_000) });
+    assert.equal(big.status, 413);
+    assert.equal((await big.json()).code, 'payload_too_large');
+  } finally { await close(); }
+});
+
+test('contact: stores once for a repeated request id, lower-cases the e-mail, honeypot stores nothing', async () => {
+  const { base, repo, close } = await startApp();
+  try {
+    const body = validContact();
+    assert.equal((await post(base, '/api/contact', body)).status, 201);
+    assert.equal((await post(base, '/api/contact', body)).status, 201);
+    assert.equal(repo.contacts.size, 1);
+    assert.equal(repo.contacts.get(body.requestId).email, 'bold@example.com');
+    const bot = await post(base, '/api/contact', validContact({ website: 'http://spam' }));
+    assert.equal(bot.status, 200);
+    assert.equal(repo.contacts.size, 1);
+  } finally { await close(); }
+});
+
+test('contact and quote validation answer with field codes', async () => {
+  const { base, close } = await startApp();
+  try {
+    const res = await post(base, '/api/contact', validContact({ email: 'nope', message: '', consent: false, topic: 'x' }));
+    assert.equal(res.status, 400);
+    const json = await res.json();
+    assert.deepEqual(json.fields, { email: 'email', topic: 'invalid', message: 'required', consent: 'consent' });
+    const missing = await post(base, '/api/quote', { requestId: 'abcdefgh1234' });
+    assert.equal(missing.status, 400);
+    const fields = (await missing.json()).fields;
+    assert.equal(fields.fullName, 'required');
+    assert.equal(fields.service, 'required');
+  } finally { await close(); }
+});
+
+test('quote: stores a quote and maps an empty product to null', async () => {
+  const { base, repo, close } = await startApp();
+  try {
+    const body = validQuote();
+    assert.equal((await post(base, '/api/quote', body)).status, 201);
+    const row = repo.quotes.get(body.requestId);
+    assert.equal(row.product, null);
+    assert.equal(row.company, null);
+    assert.equal((await post(base, '/api/quote', validQuote({ product: 'toaster' }))).status, 400);
+    assert.equal((await post(base, '/api/quote', validQuote({ product: 'hub' }))).status, 201);
+  } finally { await close(); }
+});
+
+test('503 when the database is not ready or the write fails; health follows', async () => {
+  const down = await startApp({ isDbReady: () => false });
+  try {
+    assert.equal((await post(down.base, '/api/contact', validContact())).status, 503);
+    assert.equal((await fetch(down.base + '/api/health')).status, 503);
+  } finally { await down.close(); }
+  const broken = { ...(await import('./helpers.mjs')).fakeRepo(), async createContactMessage() { throw Object.assign(new Error('secret@x.com leaked'), { code: 'ECONNRESET' }); } };
+  const app = await startApp({ repo: broken });
+  const lines = [];
+  const original = console.error;
+  console.error = (...a) => lines.push(a.join(' '));
+  try {
+    const res = await post(app.base, '/api/contact', validContact());
+    assert.equal(res.status, 503);
+    assert.deepEqual(await res.json(), { ok: false, code: 'unavailable' });
+    assert.deepEqual(lines, ['[contact] ECONNRESET']);
+  } finally { console.error = original; await app.close(); }
+});
+
+test('the 11th form post from one address is rate limited', async () => {
+  const { base, close } = await startApp();
+  try {
+    let last;
+    for (let i = 0; i < 11; i += 1) last = await post(base, '/api/contact', validContact());
+    assert.equal(last.status, 429);
+    assert.equal((await last.json()).code, 'rate_limited');
+    assert.equal((await fetch(base + '/api/health')).status, 200);
+  } finally { await close(); }
+});
+
+test('security headers are present, framing is allowed', async () => {
+  const { base, close } = await startApp();
+  try {
+    const res = await fetch(base + '/');
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(res.headers.get('x-frame-options'), null);
+    assert.equal(res.headers.get('x-powered-by'), null);
+  } finally { await close(); }
+});
+```
+
+#### `tests/routes.test.mjs`
+
+```js
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { isKnownRoute } from '../shared/routes.js';
+
+test('isKnownRoute', () => {
+  for (const p of ['/', '/services', '/SERVICES', '/products/', '/products/camera', '/products/reader', '/products/hub', '/legal/privacy', '/legal/terms', '/legal/cookies', '/quote'])
+    assert.equal(isKnownRoute(p), true, p);
+  for (const p of ['/x', '/products/x', '/products/camera/x', '/legal', '/legal/x', '//', '/services/extra', '/api/health'])
+    assert.equal(isKnownRoute(p), false, p);
+});
+```
+
+#### `tests/repository.test.mjs`
+
+```js
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createSqliteRepo } from '../functions/repository/sqliteRepo.js';
+import { buildPgConfig } from '../functions/repository/pgConfig.js';
+
+const schemaPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../db/schema.sqlite.sql');
+const contact = { requestId: 'req-00000001', fullName: 'A', email: 'a@b.mn', phone: null, topic: 'general', message: 'hi', locale: 'mn', consentGiven: true };
+const quote = { requestId: 'req-00000002', fullName: 'A', company: null, email: 'a@b.mn', phone: '90070740', service: 'access', siteType: 'office', product: null, preferredContact: 'phone', details: 'x', locale: 'en', consentGiven: true };
+
+test('sqlite repository stores once per request id and rejects values outside the CHECK lists', async () => {
+  const repo = createSqliteRepo({ dbPath: ':memory:', schemaPath });
+  await repo.init();
+  await repo.ping();
+  await repo.createContactMessage(contact);
+  await repo.createContactMessage(contact);
+  await repo.createQuoteRequest(quote);
+  await repo.createQuoteRequest(quote);
+  assert.deepEqual(await repo.counts(), { contact_messages: 1, quote_requests: 1 });
+  await assert.rejects(repo.createContactMessage({ ...contact, requestId: 'req-00000003', topic: 'spam' }));
+  await assert.rejects(repo.createQuoteRequest({ ...quote, requestId: 'req-00000004', product: 'toaster' }));
+  await repo.close();
+});
+
+test('buildPgConfig: verified TLS in every mode that uses TLS, no TLS only for local development', () => {
+  const url = 'postgresql://u:p%40ss@db.example.com:6543/postgres?sslmode=require&application_name=x';
+  const withCa = buildPgConfig({ DATABASE_URL: url, PG_CA_CERT: 'line1\\nline2', NODE_ENV: 'production' });
+  assert.deepEqual(withCa.ssl, { ca: 'line1\nline2', rejectUnauthorized: true });
+  assert.ok(!withCa.connectionString.includes('sslmode'));
+  assert.ok(withCa.connectionString.includes('application_name=x'));
+  assert.ok(withCa.connectionString.includes('p%40ss'));
+  assert.deepEqual(buildPgConfig({ DATABASE_URL: url, NODE_ENV: 'production' }).ssl, { rejectUnauthorized: true });
+  assert.equal(buildPgConfig({ DATABASE_URL: 'postgresql://u:p@localhost:5432/db' }).ssl, false);
+});
+```
+
+#### `tests/schema-sql.test.mjs`
+
+```js
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { CONTACT_TOPICS, LOCALES, PREFERRED_CONTACT, PRODUCT_SLUGS, SERVICES, SITE_TYPES } from '../shared/constants.js';
+
+const lists = (sql, column) => {
+  const m = sql.match(new RegExp(`${column}\\s+(?:IN|[^\\n]*?IN)\\s*\\(([^)]*)\\)`));
+  assert.ok(m, `${column} list not found`);
+  return m[1].split(',').map((s) => s.trim().replace(/'/g, '')).sort();
+};
+
+for (const file of ['db/schema.postgres.sql', 'db/schema.sqlite.sql']) {
+  test(`${file} CHECK lists equal shared/constants.js`, () => {
+    const sql = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+    assert.deepEqual(lists(sql, 'topic'), [...CONTACT_TOPICS].sort());
+    assert.deepEqual(lists(sql, 'service'), [...SERVICES].sort());
+    assert.deepEqual(lists(sql, 'site_type'), [...SITE_TYPES].sort());
+    assert.deepEqual(lists(sql, 'product'), [...PRODUCT_SLUGS].sort());
+    assert.deepEqual(lists(sql, 'preferred_contact'), [...PREFERRED_CONTACT].sort());
+    assert.deepEqual(lists(sql, 'locale'), [...LOCALES].sort());
+  });
+}
+```
+
+#### `tests/cutPattern.test.mjs`
+
+```js
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { buildCells } from '../src/components/glass/engine/cutPattern.ts';
+
+const area = (poly) => {
+  let sum = 0;
+  for (let i = 0; i < poly.length; i += 1) {
+    const [x1, y1] = poly[i];
+    const [x2, y2] = poly[(i + 1) % poly.length];
+    sum += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(sum) / 2;
+};
+const cross = (a, b, c) => (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0]);
+const crosses = (a, b, c, d) => cross(a, c, d) * cross(b, c, d) < 0 && cross(a, b, c) * cross(a, b, d) < 0;
+const isSimple = (poly) => {
+  const n = poly.length;
+  for (let i = 0; i < n; i += 1)
+    for (let j = i + 1; j < n; j += 1) {
+      if (j === i + 1 || (i === 0 && j === n - 1)) continue;
+      if (crosses(poly[i], poly[(i + 1) % n], poly[j], poly[(j + 1) % n])) return false;
+    }
+  return true;
+};
+
+test('the five cells always tile the unit square, stay simple and stay inside it', () => {
+  const pointers = [null, [0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]];
+  for (const portrait of [false, true])
+    for (let t = 0; t <= 60; t += 1.7)
+      for (const pointer of pointers) {
+        const cells = buildCells(t, pointer, portrait);
+        let total = 0;
+        for (const name of 'ABCDE') {
+          const poly = cells[name];
+          assert.ok(area(poly) > 1e-4, `${name} has area at t=${t}`);
+          assert.ok(isSimple(poly), `${name} is simple at t=${t}`);
+          for (const [x, y] of poly) assert.ok(x >= 0 && x <= 1 && y >= 0 && y <= 1, `${name} vertex inside at t=${t}`);
+          total += area(poly);
+        }
+        assert.ok(Math.abs(total - 1) < 1e-9, `areas add up at t=${t}`);
+      }
+});
+```
+
+Also keep `npm run check:i18n` and `npm run typecheck` green. Unit-test `format()` (placeholders, a missing variable stays as written) and `hasUrl` / `isEmail` (`hasUrl('http://x.mn')` is false, `hasUrl('https://x.mn')` is true, `hasUrl('')` is false).
+
+### Environment and configuration
+
+`.env.example` (no real values) with one-line comments:
+
+```
+PORT=3000                      # listening port (the host usually sets it)
+NODE_ENV=development           # production on the host
+DATABASE_URL=                  # PostgreSQL URL; empty means the local SQLite file is used
+PG_CA_CERT=                    # the provider's CA certificate in PEM, newlines written as \n
+DB_PATH=./data/sentinel.db     # local SQLite file (git-ignored)
+VITE_CONTACT_EMAIL=            # optional: shown in the footer and on /contact when set
+VITE_SOCIAL_LINKEDIN=          # optional: https URL; the footer link appears only when set
+VITE_SOCIAL_FACEBOOK=          # optional
+VITE_SOCIAL_INSTAGRAM=         # optional
+```
+
+`VITE_*` values are baked into the client at build time, so they must be set before `npm run build`. `.gitignore` lists `node_modules`, `dist`, `data`, `.env`. The server runs on `0.0.0.0` so a preview iframe and a hosting platform can reach it.
+
+### Docs the project must contain
+
+- `docs/DATA.md`: both tables, which fields are personal data (name, e-mail, phone, company, message, details), the retention rule written in the privacy policy (delete contact messages after 24 months and quote requests after 36 months), and how the owner reads submissions (in the Supabase Table Editor; there is no admin page in this phase).
+- `docs/CONTENT.md`: the list of placeholders the owner must replace before launch (see "Data and placeholders"), with the file each one lives in, plus a line that the legal texts need a lawyer's review.
+- `docs/CREDITS.md`: author, source URL and licence of every 3D model in `public/models/` (empty table with those headers until models are added); a CC BY or CC BY-SA model also needs a visible credit line under the viewer (the viewer shows `credit` from `products.ts` when it is set).
+- Not in this phase, to be added later: an admin page for submissions, e-mail notification of new requests (SMTP), a content security policy. The later policy must allow `fonts.googleapis.com`, `fonts.gstatic.com`, `www.gstatic.com` (Draco decoder), `prod.spline.design` and whatever else the Spline runtime requests (check the network tab; it needs `blob:` and WebAssembly), and `blob:` for `img-src` and `worker-src`.
+
+## Robustness rules every 3D piece follows (Spline hero, glass section, product viewer)
+
+1. StrictMode-safe: a fresh canvas per mount, a `cancelled` flag around async work, full cleanup, no `forceContextLoss()`.
+2. Every network request has an `AbortController`, and a stall timeout (Spline 25 s, product model 20 s with no progress, glass first frame 8 s).
+3. A failure never blanks the page and never shows a raw error: each piece has a designed fallback (static backdrop, static glass, illustration or procedural model).
+4. `webglcontextlost` is handled; `webglcontextrestored` rebuilds once.
+5. A weak-device gate (save-data, `deviceMemory <= 4`, `hardwareConcurrency <= 2`, reduced motion) with an explicit "Load 3D" button where it applies.
+6. Everything pauses when off screen or when `document.hidden`; three.js is loaded only near the viewport.
+7. `localStorage` is always wrapped in try/catch.
+8. No `console.log` in the shipped code and no console errors on load.
+
+## Acceptance checklist
+
+**Build and code**
+1. `npm install` works on a clean clone with no flags; `npm run build`, `npm run typecheck`, `npm test`, `npm run check:i18n` all pass; `npm start` serves the built site; `npm run dev` works.
+2. No `esbuild` dependency, no Firebase or Supabase SDK, no `any`, no `console.log`, no secrets, no `rejectUnauthorized: false`.
+
+**Languages**
+3. Default is Mongolian; the toggle switches instantly without reload, route change, Spline restart, model reset or shard movement; the choice survives a reload; `?lang=en` works; `<html lang>` and the title follow.
+4. At every width in "Mongolian must never break the layout", in both languages, on every page: no horizontal scroll, no clipped or overlapping text, the navbar row never wraps at 1280px, no button text outside its button.
+
+**Home**
+5. The Spline hero matches Appendix A (type, spacing, animation delays, buttons); text over the scene meets 4.5:1 (sampled); with Spline blocked or slow the static backdrop shows and the page works.
+6. The glass section sits under the hero, matches Appendix B in motion and look, uses the green re-theme, and every text in it meets the contrast and size floors. Hover lift, tilt, shatter into the five terms, "← Back" and the fly-in all work; Tab and Escape work; switching language while shattered and while assembled updates the text in place. Below 900px, on touch, under reduced motion or with WebGL blocked, the static version appears and the five terms open in place.
+7. Scrolling past and back to the glass section several times creates and disposes the renderer without errors or a growing memory use.
+
+**Footer and shell**
+8. The footer matches Appendix C with the listed overrides on every page; the wordmark "SENTINEL AI" is never clipped from 320px to 2560px; contact lines, legal links and the toggle work; with no social URLs the layout is still balanced; no dead links.
+9. The skip link, the focus rings, the mobile menu (focus trap, Escape, scroll lock, closes on navigation) and the sticky bar behave as described.
+
+**Pages and 3D**
+10. Every route in the table renders in both languages; an unknown path, an unknown product slug and an unknown legal slug render the themed 404 and the server answers status 404 for them.
+11. `/products`: with no GLB files present the three procedural models show and rotate; with a GLB in `public/models/` it loads, is normalised to the same size, and the "Illustrative model" caption stays; switching products quickly never shows the wrong model or leaks; drag, keyboard and touch scrolling all work.
+12. The 404 page has the radar, the brackets, the quick links and the shown path; it stops animating under reduced motion.
+
+**Forms and server**
+13. Both forms validate in both languages with the shared schemas, show errors per field, submit once, and store exactly one row per submit even with a double click; the honeypot stores nothing; a stopped database gives the localised "unavailable" text while the rest of the site works; the 11th post in 15 minutes shows the generic error.
+14. `GET /api/health` is `{ ok: true }` with a database and 503 without one.
+
+**Accessibility and performance**
+15. Zero axe-core violations on `/`, `/services`, `/products/camera`, `/contact`, `/quote` and the 404 at 390px and 1440px, in both languages (focus order, names, contrast, target size, landmarks, one `h1` per page).
+16. The first load of `/` does not download three.js; Lighthouse performance on a mid-range phone profile is reported (no hard score is required because the Spline scene is large).
+
+
+---
+
+# Appendix A: SENTINEL AI Spline hero (source design for the home hero, the navbar, the tokens and the font; verbatim)
+
+Create a full-screen dark hero landing page for a security company called "SENTINEL AI" using React, Vite, TypeScript, Tailwind CSS, shadcn/ui, and an embedded Spline 3D scene as the background. The tech stack uses @splinetool/react-spline and @splinetool/runtime for the 3D embed. Here is every detail:
+
+FONT:
+Google Fonts "Sora" with weights 300, 400, 500, 600, 700. Load it in index.html:
+
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+Set font-sora as the body font via Tailwind config: fontFamily: { sora: ["Sora", "sans-serif"] } and apply font-sora antialiased on body.
+
+COLOR THEME (all HSL CSS custom properties, dark only, no light mode):
+
+--background: 0 0% 10% (dark charcoal)
+--foreground: 0 0% 96% (near-white)
+--primary: 119 99% 46% (vivid green)
+--primary-foreground: 0 0% 4% (near-black)
+--secondary: 0 0% 18%
+--secondary-foreground: 0 0% 96%
+--muted: 0 0% 16%
+--muted-foreground: 0 0% 60%
+--accent: 119 99% 46% (same vivid green as primary)
+--accent-foreground: 0 0% 4%
+--destructive: 0 84% 60%
+--border: 0 0% 20%
+--input: 0 0% 20%
+--ring: 119 99% 46%
+--radius: 0.5rem
+--nav-button: 0 0% 18%
+--hero-bg: 0 0% 8% (the darkest background, nearly black)
+Map these in Tailwind config using hsl(var(--variable)) pattern. Add custom color tokens: nav-button and hero-bg.
+
+CUSTOM ANIMATIONS (Tailwind config keyframes + animation):
+
+fade-up keyframe:
+
+0%: opacity: 0, transform: translateY(20px), filter: blur(4px)
+100%: opacity: 1, transform: translateY(0), filter: blur(0)
+Animation: fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards
+fade-in keyframe:
+
+0%: opacity: 0
+100%: opacity: 1
+Animation: fade-in 0.5s ease-out forwards
+NAVBAR (fixed, transparent, floating over the Spline scene):
+
+fixed top-0 left-0 right-0 z-50, horizontal flex, justify-between, padding px-8 lg:px-16 py-5
+Left: Logo text "SENTINEL" -- text-foreground text-xl font-semibold tracking-tight
+Center: Nav links array: ["Services", "About Us", "Projects", "Team", "Contacts"] -- each is text-sm text-muted-foreground hover:text-foreground transition-colors uppercase tracking-widest. Links use href={#section-name}. Hidden on mobile (hidden md:flex), with gap-8.
+Right: "Get Quote" button using shadcn Button with a custom navCta variant: text-foreground bg-nav-button hover:bg-nav-button/80 active:scale-[0.97] transition-all. Size lg, with classes hidden md:inline-flex rounded-lg uppercase text-xs tracking-widest px-6.
+HERO SECTION (full-screen, content at bottom-left):
+
+Structure:
+
+Outer <section>: relative min-h-screen flex items-end bg-hero-bg overflow-hidden
+Spline 3D Background (absolute, full-size): Lazy-loaded via React.lazy(() => import("@splinetool/react-spline")) wrapped in <Suspense> with a fallback <div className="absolute inset-0 bg-hero-bg" />. The Spline component uses scene="https://prod.spline.design/Slk6b8kz3LRlKiyk/scene.splinecode" and className="w-full h-full". Placed inside <div className="absolute inset-0">.
+Dark overlay: <div className="absolute inset-0 bg-black/30 z-[1] pointer-events-none" />
+Content container: relative z-10 pointer-events-none w-full max-w-[90%] sm:max-w-md lg:max-w-2xl px-6 md:px-10 pb-10 md:pb-10 pt-32
+Content elements (all with staggered animate-fade-up, starting opacity-0):
+
+Heading (delay 0.2s): <h1> with text "SENTINEL" in white + " AI" in primary green. Classes: text-[clamp(3rem,8vw,6rem)] font-bold leading-[1.05] tracking-[-0.05em] text-foreground mb-2 md:mb-4 uppercase. The "AI" part is wrapped in <span className="text-primary">.
+
+Subheading (delay 0.4s): <p> -- "We implement security correctly." -- text-foreground/80 text-[clamp(1.125rem,2.5vw,1.875rem)] font-light mb-3 md:mb-6
+
+Description (delay 0.55s): <p> -- "Enterprise security systems built in days. AI-powered surveillance deployed with zero-trust architecture. Smart access control set up for your entire facility. All of it done right, not just fast." -- text-muted-foreground text-[clamp(0.875rem,1.5vw,1.25rem)] font-light mb-4 md:mb-8
+
+Two CTA buttons (delay 0.7s): Wrapped in flex flex-wrap gap-3 font-bold. Both are plain <button> elements (not shadcn Button) with pointer-events-auto (to re-enable clicks since parent is pointer-events-none):
+
+"Book a Call": bg-primary text-primary-foreground px-6 py-3 md:px-8 md:py-4 text-sm rounded-sm cursor-pointer hover:brightness-110 transition-all active:scale-[0.97]
+"Our Work": bg-white text-background px-6 py-3 md:px-8 md:py-4 text-sm rounded-sm cursor-pointer hover:brightness-90 transition-all active:scale-[0.97]
+Trust line (delay 0.85s): <p> -- "Trusted security partner. Columbus, OH. 12 systems deployed." -- text-muted-foreground/60 text-xs font-light mt-4 md:mt-6
+
+All animated elements use style={{ animationDelay: "Xs" }} for the stagger, combined with the opacity-0 animate-fade-up classes.
+
+PAGE WRAPPER (Index.tsx):
+Simple wrapper: <div className="bg-hero-bg min-h-screen"> containing <Navbar /> and <HeroSection />.
+
+KEY DEPENDENCIES:
+
+@splinetool/react-spline and @splinetool/runtime for the 3D Spline embed
+tailwindcss-animate plugin
+shadcn/ui Button component with custom variants (navCta, hero, heroOutline)
+class-variance-authority for button variants
+IMPORTANT NOTES:
+
+The Spline scene URL is https://prod.spline.design/Slk6b8kz3LRlKiyk/scene.splinecode -- this is the exact 3D scene used
+The entire content area has pointer-events-none so clicks pass through to the Spline scene, but buttons re-enable with pointer-events-auto
+Responsive fluid typography uses clamp() for the heading, subheading, and description
+The content is anchored to the bottom-left of the viewport (flex items-end on the section + padding-bottom on the content)
+No hamburger menu on mobile -- the nav links and CTA simply hide (hidden md:flex / hidden md:inline-flex)
+
+---
+
+# Appendix B: Facet "Designed in glass" hero (source design for the home page glass section; verbatim)
+
+# Prompt: Facet "Designed in glass" hero
+
+Build a one-screen **WebGL hero for a fictional real-time material studio, Facet**. The page is a dark website shattered into **thick smoked-glass shards** floating on black. The content is printed on the shards. The whole slab tilts toward the cursor, the shard under the pointer lifts and tips, and "Read paper →" shatters the page to reveal a second view. Use plain HTML, CSS and JS with three.js 0.169.0 from jsDelivr (import map, plus `RoomEnvironment` from the addons). No build step and no images: all content is drawn in code. Font: Inter (variable woff2, 400–600).
+
+## Scene and scale
+
+- **Background:** #050507.
+- **Camera:** perspective, fov 30°, placed so that 1 world unit = 1 CSS px at z = 0.
+- **Renderer:** ACES filmic tone mapping, DPR capped at 2.
+- **Environment:** PMREM RoomEnvironment, `environmentIntensity` .42, plus a soft white-blue key light from the top-left.
+- **Page block:** centred, with side margins of 5.5 % of the width and top/bottom margins of 8.5 % of the height (16 px on phones).
+  - The block is a **nav slab** (10.8 % of the block height) above a **14 px gap** and a **shard panel** (the rest).
+  - Layout scale: S = blockWidth / 1730.
+
+## The glass
+
+- **Construction:** every piece is an `ExtrudeGeometry` of a rounded polygon.
+  - Corner radius 20·S, depth 13·S, bevel 2.6·S with 3 segments.
+  - The outline is inset by half the gap, so pieces sit 14·S apart.
+- **Material:** MeshPhysicalMaterial.
+  - color #17171b, roughness .36, clearcoat .7, clearcoatRoughness .12, specularIntensity .7.
+  - Iridescence .55 (IOR 1.3, thickness 250–650 nm), rising to 1.0 together with envMapIntensity 1 → 1.9 while a piece is hovered.
+  - The result: dark charcoal faces, soft studio gradients, thin bright rims, and a green/violet sheen when a piece tips toward the light.
+- **Cursor glow:** a soft lavender emission injected into the glass shader via `onBeforeCompile`: `vec3(.42,.37,.62) · .16 · exp(−1.6·(d/300S)²)` around the pointer's world position. It fades in and out with the pointer.
+
+## The cut pattern (live)
+
+- **Cells:** five cells measured from the reference, in panel-normalised coordinates (x right, y down).
+  - Edge points: top .22, .515, .84; bottom .34, .865.
+  - Inner junctions: J0 (.385,.72), J1 (.48,.62), J2 (.716,.49).
+  - A = TL·tAB·J0·bAD·BL (hero), B = tAB·tBC·J1·J0, C = tBC·tCE·J2·J1, D = J0·J1·J2·bDE·bAD, E = tCE·TR·BR·bDE·J2.
+- **Drift:** every point drifts on its own slow sine (x ±.03; junctions also y ±.05; periods ≈10–20 s).
+- **Cursor push:** points within .6 of the pointer are pushed away by up to .05, so the cell under the cursor grows.
+- **Rebuild:** geometry is rebuilt about 45×/s.
+- **Portrait screens:** the pattern is transposed so the hero cell sits on top.
+
+## Content printed on the glass
+
+- **Page image:** one canvas (DPR ≥1.5) of the whole panel. Each cell carries a `ShapeGeometry` of its own outline just above its top face, with UVs mapped to its original page position. A lifted or flying shard takes its slice of the text with it, and the seams read like refraction.
+- **Panel content:**
+  - Eyebrow "REAL-TIME MATERIAL STUDIO": 11·S px, tracking .2em, 38 % white, at 13.5 % of the height.
+  - Headline "Designed / in glass.": Inter 500, size min(7.8 % of panel width, 20 % of height), tracking −.045em, leading .97, a #dcdce0→#bdbdc3 vertical gradient.
+  - Two-line sub "Author dispersion, transmission, and refraction in the browser. Live / previews, real materials.": 55 % white.
+  - "Open studio" light pill (116×40·S, radius 6). It **turns green #36d67e on hover**.
+  - "Read paper →" link (underlines on hover).
+  - "© Facet Lab" bottom-left and "KHR_materials_dispersion" bottom-right, 11·S px at 34 % white.
+- **Nav slab:** square mark + "Facet", links "Studio · Materials · Pricing" (60 % white, brighten on hover), "Sign in" right.
+- **Text layer:** a transparent DOM copy of all text is mapped onto the tilted panel with a homography (`matrix3d` from the panel's four projected corners). Text is selectable (blue selection box) and buttons and links are real hit areas.
+
+## Interaction
+
+- **Global tilt:** the block rotates as if pressed at the pointer: rotateY = x·7° − 1.2°, rotateX = −y·5.5° + .8°. It is smoothed with a 0.3 s exponential and eases back when the pointer leaves the window.
+- **Hover:** a raycast picks the piece under the pointer (cells and nav). It springs (k 170, c 19) up 50·S toward the camera (nav 32·S) and tips up to ±.24 rad, with the edge nearest the pointer dipping away. Neighbours stay put.
+- **Shatter (click "Read paper →"):**
+  - Every piece, nav first, flies off in 0.72 s with ease-in cubic, with a small stagger per piece.
+  - Each piece gets an outward and downward velocity plus 420–800·S toward the camera, gravity, and 2.0–3.6 rad of tumble about a random axis. The printed text rides along.
+  - From 0.28 s the definitions view fades in on black over 0.4 s. Its type scales with viewport width, measured from the reference:
+    - The column starts at 32.4 % W and is 33.9 % W wide. The title baseline sits at 35.9 % H.
+    - Title "Real-time glass, in five terms.": Inter 650, 1.36 vw, tracking −.022em, white.
+    - Five paragraphs (Iridescence, Index of refraction, Dispersion, Transmission, Roughness): .73 vw on a 1.72 line height, 60 % white, with the bold term in white + an em dash. Gaps are 1.05 vw.
+  - The **"← Back" sliver** is a thin dark smoked-glass shard, the same material as the cells with iridescence .35 and no cursor glow.
+    - Outline: viewport fractions (.147,.243) (.252,.169) (.287,.277) (.151,.258), with rounded corners, an 11·k extrusion and a bright bevel (k = W/1918).
+    - It leans in 3D: rotateY −.16 (left end further away) and rotateX .08. It has a slow idle wobble (±.03–.04 rad at ≈1 Hz) and tips up to .14 rad toward the pointer on hover.
+    - "← Back" is .66 vw Inter 500, white, centred at (.219 W, .238 H). It turns lavender #b9abff on hover.
+    - It grows in from .3 s after the click and shrinks away on Back.
+- **Back:** the definitions fade out in 0.25 s and the sliver shrinks away. The pieces fly back along the same paths in 0.72 s with ease-out-back (a slight overshoot), nav first, then a 30 ms stagger.
+- **Load:** the page enters with the same fly-in.
+- **Reduced motion / no WebGL:** a static styled HTML version.
+
+## Acceptance check (1440×960)
+
+- The dark glass shards and nav slab look thick, with bright hairline rims and black gaps. The headline is printed across the cuts.
+- Moving the mouse tilts the whole slab, and the hovered shard lifts, tips, gains a sheen and glows lavender under the cursor.
+- The cut lines slowly breathe.
+- "Read paper →" shatters everything, with the text flying on the shards, into the five-terms view. "← Back" reassembles it.
+- **Content:** no real brands or logos.
+
+---
+
+# Appendix C: EngineTech footer (source design for the site footer; verbatim)
+
+---
+
+Build a **Site Footer** for an aerospace company called "EngineTech." This is a black-background footer with an animated dotted top border, a four-column nav grid with a large heading, an oversized wordmark brand row, and a legal line.
+
+---
+
+## ROOT CONTAINER (`.site-footer`)
+
+- Position relative, z-index 100, overflow hidden.
+- Background: `#000000`. Color: `#ffffff`.
+
+---
+
+## ANIMATED DOTS STRIP (`.footer-dots`)
+
+A decorative band at the very top of the footer with horizontally drifting dots.
+
+- Position relative, height 120px, overflow hidden, background `#000000`.
+- Has `aria-hidden="true"`.
+
+**Inside (`.footer-dots__line`):**
+
+- Position absolute, `left: 0; top: 50%`. Width **200%**, height 70px.
+- Opacity 0.75. `transform: translateY(-50%)`.
+- Background-image (three layered radial-gradient dot patterns):
+  - `radial-gradient(circle, rgb(255 255 255 / 0.55) 1.5px, transparent 2px)`
+  - `radial-gradient(circle, rgb(255 255 255 / 0.35) 1px, transparent 1.5px)`
+  - `radial-gradient(circle, rgb(255 255 255 / 0.45) 1.2px, transparent 1.8px)`
+- Background-position: `0 8px, 24px 22px, 48px 14px`.
+- Background-size: `72px 38px, 110px 44px, 160px 52px`.
+- Animation: `footerDotsMove 18s linear infinite`.
+
+**Keyframes:**
+
+```
+@keyframes footerDotsMove {
+  from { transform: translate3d(0, -50%, 0); }
+  to   { transform: translate3d(-50%, -50%, 0); }
+}
+```
+
+---
+
+## FOOTER INNER (`.site-footer__inner`)
+
+- Width: `min(100% - 96px, var(--hero-max-width))` where `--hero-max-width: 1820px`. Margin `0 auto`.
+- Padding: `clamp(34px, 4vw, 66px) 0 clamp(18px, 2vw, 34px)`.
+
+---
+
+## TOP GRID (`.site-footer__top`)
+
+- Display grid. Columns: `minmax(320px, 1.25fr) repeat(3, minmax(150px, 0.42fr))`.
+- Gap: `clamp(28px, 4vw, 76px)`. Min-height: `clamp(220px, 24vw, 330px)`.
+
+### H2 (first cell)
+
+- Text: "Proven Advanced Propulsion Technology".
+- Max-width 680px, margin 0, color `#ffffff`, `font-size: clamp(34px, 3.5vw, 62px)`, weight 220, letter-spacing 0, line-height 1.06.
+
+### Nav columns (three `.site-footer__nav` elements)
+
+Each nav is `display: flex; flex-direction: column; align-items: flex-start; gap: clamp(14px, 1.35vw, 22px)`.
+
+Each link `<a>`:
+- Color `rgb(255 255 255 / 0.88)`, font-size 16px, weight 650, line-height 1.1.
+- Transition: `color 180ms ease, transform 180ms ease`.
+- Hover: color `#ffffff`, `transform: translateX(3px)`.
+
+**Nav 1 (`aria-label="Footer navigation"`):**
+- Company → `#company`
+- Technology → `#technology`
+- Solutions → `#solutions`
+- Our Edge → `#our-edge`
+- Investors → `#investors`
+
+**Nav 2 (`aria-label="Company links"`):**
+- Our Team → `#our-team`
+- News → `#news`
+- Careers → `#careers`
+- Contact Us → `#contact`
+
+**Nav 3 (`aria-label="Social links"`):**
+- LinkedIn → `https://www.linkedin.com` (`target="_blank" rel="noreferrer"`)
+- Follow Us on X → `https://x.com` (`target="_blank" rel="noreferrer"`)
+
+---
+
+## BRAND ROW (`.site-footer__brand-row`)
+
+- Width 100%. Margin-top: `clamp(18px, 3vw, 46px)`.
+
+**Brand link (`.site-footer__brand`):**
+
+- Anchor `href="/"`, `aria-label="EngineTech home"`.
+- Display flex, align-items center, width 100%, color `#ffffff`.
+
+**Brand mark (`.site-footer__mark`):**
+
+- Position relative, `flex: 0 0 clamp(58px, 6.1vw, 118px)`, `aspect-ratio: 1`.
+- Margin-right `clamp(14px, 1.6vw, 28px)`. Overflow hidden, border-radius 50%.
+- Background `#ffffff`.
+- `::before` pseudo: absolute `inset: -18%`, background `#000000`, with `clip-path: polygon(0 20%, 100% 8%, 100% 19%, 0 31%, 0 43%, 100% 31%, 100% 42%, 0 54%, 0 66%, 100% 54%, 100% 65%, 0 77%)`. This creates a zig-zag wave pattern inside the white circle.
+- Has `aria-hidden="true"`.
+
+**Brand wordmark (second `<span>`):**
+
+- Text: "EngineTech".
+- Display block, `flex: 1 1 auto`, min-width 0.
+- `font-size: clamp(58px, 11.1vw, 214px)`. Weight 760. `letter-spacing: -0.055em`. Line-height 0.78.
+- `white-space: nowrap`.
+
+---
+
+## LEGAL LINE (`.site-footer__legal`)
+
+- Flex row, wrap allowed, justify-content flex-start, gap `8px 18px`.
+- Margin-top: `clamp(14px, 1.4vw, 24px)`.
+- Color `rgb(255 255 255 / 0.52)`, font-size 9px, line-height 1.35.
+
+Contents:
+- `<p>`: "© 2026 EngineTech. All rights reserved." (margin 0)
+- `<a href="#privacy">`: "Privacy Policy" (color inherit, hover `#ffffff`)
+- `<a href="#terms">`: "Terms of Use" (same styling)
+
+---
+
+## RESPONSIVE BREAKPOINTS
+
+**At 980px:**
+
+- `.site-footer__inner` width: `min(100% - 48px, var(--hero-max-width))`.
+- Top grid: `grid-template-columns: 1fr 1fr` (two columns).
+- H2 spans full width: `grid-column: 1 / -1`.
+
+**At 560px:**
+
+- `.site-footer__inner` width: `min(100% - 32px, var(--hero-max-width))`.
+- Top grid: single column (`grid-template-columns: 1fr`). Min-height auto.
+- Nav links font-size 15px.
+- Brand mark flex-basis: `clamp(38px, 12vw, 58px)`.
+- Brand wordmark font-size: `clamp(45px, 18vw, 84px)`.
+
+---
+
+## GLOBAL STYLES
+
+**CSS custom property used:** `--hero-max-width: 1820px`.
+
+**Font stack:** `"Geist", "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif` with `-webkit-font-smoothing: antialiased` and `text-rendering: geometricPrecision`.
+
+**Anchor reset:** `a { color: inherit; text-decoration: none; }`.
+
+**Color palette:** No purple or violet. Pure black `#000000` background, pure white `#ffffff` text, with `rgb(255 255 255 / 0.88)` for nav links, `rgb(255 255 255 / 0.55)` / `0.45` / `0.35` for the dot pattern, and `rgb(255 255 255 / 0.52)` for legal text.

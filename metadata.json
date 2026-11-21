@@ -1,0 +1,6 @@
+{
+  "name": "SENTINEL AI",
+  "description": "SENTINEL AI designs and installs AI surveillance, smart access control and zero-trust networks for businesses in Ulaanbaatar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

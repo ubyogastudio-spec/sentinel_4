@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="mn">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (function () {
+        var lang = 'mn';
+        try {
+          var query = new URLSearchParams(location.search).get('lang');
+          var saved = null;
+          try { saved = localStorage.getItem('sentinel.lang'); } catch (e) {}
+          lang = query === 'en' || query === 'mn' ? query : saved === 'en' || saved === 'mn' ? saved : 'mn';
+        } catch (e) {}
+        document.documentElement.lang = lang;
+      })();
+    </script>
+    <title>SENTINEL AI | Зөв барьсан хамгаалалтын систем</title>
+    <meta
+      name="description"
+      content="SENTINEL AI нь Улаанбаатарын байгууллагуудад зориулж хиймэл оюун ухаант хяналтын камер, ухаалаг нэвтрэх хяналт, zero-trust сүлжээг зохион бүтээж, суурилуулдаг."
+    />
+    <meta property="og:title" content="SENTINEL AI | Security systems built right" />
+    <meta
+      property="og:description"
+      content="SENTINEL AI designs and installs AI surveillance, smart access control and zero-trust networks for businesses in Ulaanbaatar."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Inter:wght@300..700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="font-sora antialiased bg-hero-bg text-foreground">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

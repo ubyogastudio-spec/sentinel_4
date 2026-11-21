@@ -1,0 +1,34 @@
+CREATE TABLE IF NOT EXISTS contact_messages (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id    TEXT NOT NULL UNIQUE,
+  full_name     TEXT NOT NULL,
+  email         TEXT NOT NULL,
+  phone         TEXT,
+  topic         TEXT NOT NULL CHECK (topic IN ('general','call','support','careers','press')),
+  message       TEXT NOT NULL,
+  locale        TEXT NOT NULL DEFAULT 'mn' CHECK (locale IN ('mn','en')),
+  consent_given INTEGER NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','handled','spam')),
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS quote_requests (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id        TEXT NOT NULL UNIQUE,
+  full_name         TEXT NOT NULL,
+  company           TEXT,
+  email             TEXT NOT NULL,
+  phone             TEXT NOT NULL,
+  service           TEXT NOT NULL CHECK (service IN ('surveillance','access','network','audit')),
+  site_type         TEXT NOT NULL CHECK (site_type IN ('office','retail','warehouse','residential','industrial','other')),
+  product           TEXT CHECK (product IS NULL OR product IN ('camera','reader','hub')),
+  preferred_contact TEXT NOT NULL CHECK (preferred_contact IN ('phone','email')),
+  details           TEXT NOT NULL,
+  locale            TEXT NOT NULL DEFAULT 'mn' CHECK (locale IN ('mn','en')),
+  consent_given     INTEGER NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','contacted','closed','spam')),
+  created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_contact_messages_created ON contact_messages (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_quote_requests_created   ON quote_requests (created_at DESC);
