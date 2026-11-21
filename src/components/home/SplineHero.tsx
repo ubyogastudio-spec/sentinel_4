@@ -32,7 +32,7 @@ class SplineErrorBoundary extends Component<
   }
 }
 
-export function SplineHero() {
+export function SplineHero({ onSettled }: { readonly onSettled?: () => void } = {}) {
   const { t } = useLocale();
   const sectionRef = useRef<HTMLElement | null>(null);
   const splineAppRef = useRef<SplineAppLike | null>(null);
@@ -89,10 +89,17 @@ export function SplineHero() {
     };
   }, []);
 
+  useEffect(() => {
+    if (gated || stalled || errored) {
+      onSettled?.();
+    }
+  }, [gated, stalled, errored, onSettled]);
+
   const handleLoad = (app: unknown) => {
     splineAppRef.current = (app && typeof app === 'object' ? app : null) as SplineAppLike | null;
     setLoaded(true);
     setStalled(false);
+    onSettled?.();
   };
 
   const handleRetry = () => {

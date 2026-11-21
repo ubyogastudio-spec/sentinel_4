@@ -173,6 +173,7 @@
   pointer-events: none;
   overflow: hidden;
   user-select: text;
+  touch-action: pan-y;
 }
 
 .glass-panel-layer {
@@ -216,7 +217,7 @@
   pointer-events: none;
   font-family: var(--font-glass);
   opacity: 0;
-  transition: opacity 0.4s ease;
+  transition: opacity 0.4s ease 0.28s;
 }
 
 .glass-defs[data-visible="true"] {
@@ -226,7 +227,7 @@
 
 .glass-defs[data-leaving="true"] {
   opacity: 0;
-  transition: opacity 0.25s ease;
+  transition: opacity 0.25s ease 0s;
 }
 
 .glass-defs__col {
@@ -291,6 +292,22 @@
 
 .glass-back-btn:hover {
   color: #05E901;
+}
+
+@media (max-width: 899px) {
+  .glass-back-btn {
+    left: 24%;
+    top: 12%;
+  }
+
+  .glass-defs__col {
+    left: 24px;
+    right: 24px;
+    width: auto;
+    top: 20%;
+    max-height: 74%;
+    overflow-y: auto;
+  }
 }
 
 /* ============================================================================

@@ -7,7 +7,11 @@ import { buildCells, type CellName } from './engine/cutPattern';
 
 const CELL_NAMES: readonly CellName[] = ['A', 'B', 'C', 'D', 'E'];
 
-export function StaticGlass() {
+interface StaticGlassProps {
+  readonly onRetry3d?: () => void;
+}
+
+export function StaticGlass({ onRetry3d }: StaticGlassProps) {
   const { locale, t } = useLocale();
   const [open, setOpen] = useState(false);
   const [isPortrait, setIsPortrait] = useState(false);
@@ -143,6 +147,16 @@ export function StaticGlass() {
               >
                 {t.glass.read}
               </button>
+
+              {onRetry3d ? (
+                <button
+                  type="button"
+                  onClick={onRetry3d}
+                  className="inline-flex min-h-11 items-center font-glass text-xs font-medium text-white/60 underline underline-offset-4 hover:text-primary cursor-pointer"
+                >
+                  {t.glass.try3d}
+                </button>
+              ) : null}
             </div>
           </div>
 

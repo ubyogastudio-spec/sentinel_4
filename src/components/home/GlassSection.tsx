@@ -1,25 +1,31 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { GlassDebugOverlay } from '@/components/glass/GlassDebugOverlay';
 import { StaticGlass } from '@/components/glass/StaticGlass';
-import { isWeakDevice, prefersReducedMotion } from '@/lib/device';
-import { hasWebGL } from '@/lib/webgl';
+import { useGlassMode } from '@/components/glass/useGlassMode';
+import { isGlassLowPower } from '@/lib/device';
 
 const LazyGlassStage = lazy(() =>
   import('@/components/glass/GlassStage').then((m) => ({ default: m.GlassStage })),
 );
 
-function canUseWebglGlass(): boolean {
+function isDebugEnabled(): boolean {
   if (typeof window === 'undefined') return false;
-  const wide = window.matchMedia('(min-width: 900px)').matches;
-  const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-  if (!wide || !finePointer) return false;
-  if (prefersReducedMotion() || isWeakDevice()) return false;
-  return hasWebGL();
+  return new URLSearchParams(window.location.search).get('glassdebug') === '1';
 }
 
-export function GlassSection() {
+export function GlassSection({ splineReady = true }: { readonly splineReady?: boolean }) {
   const sectionRef = useRef<HTMLElement | null>(null);
-  const [eligible, setEligible] = useState<boolean>(canUseWebglGlass);
-  const [failed, setFailed] = useState(false);
+  const { mode, reason, webglProbe } = useGlassMode();
+  const [lowPower] = useState(isGlassLowPower);
+  const [debugEnabled] = useState(isDebugEnabled);
+
+  // Up to 2 automatic attempts (initial + 1 fresh-canvas rebuild) before demoting to static.
+  const [attempt, setAttempt] = useState(1);
+  const [engineFailed, setEngineFailed] = useState(false);
+  const [engineFailures, setEngineFailures] = useState(0);
+  const [contextLostEvents, setContextLostEvents] = useState(0);
+  const [firstFrameMs, setFirstFrameMs] = useState<number | null>(null);
+
   const [nearViewport, setNearViewport] = useState(false);
   const [onScreen, setOnScreen] = useState(false);
   const [docHidden, setDocHidden] = useState(() =>
@@ -27,30 +33,16 @@ export function GlassSection() {
   );
 
   useEffect(() => {
-    const mqWide = window.matchMedia('(min-width: 900px)');
-    const mqPointer = window.matchMedia('(hover: hover) and (pointer: fine)');
-    const mqMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const update = () => setEligible(canUseWebglGlass());
-
-    mqWide.addEventListener('change', update);
-    mqPointer.addEventListener('change', update);
-    mqMotion.addEventListener('change', update);
-    return () => {
-      mqWide.removeEventListener('change', update);
-      mqPointer.removeEventListener('change', update);
-      mqMotion.removeEventListener('change', update);
-    };
-  }, []);
-
-  useEffect(() => {
     const onVisibility = () => setDocHidden(document.hidden);
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, []);
 
+  const webglMode = mode === 'webgl' && !engineFailed;
+
   useEffect(() => {
     const el = sectionRef.current;
-    if (!el || !eligible || failed) return;
+    if (!el || !webglMode) return;
 
     let disposeTimer: number | null = null;
 
@@ -90,13 +82,37 @@ export function GlassSection() {
       nearObserver.disconnect();
       screenObserver.disconnect();
     };
-  }, [eligible, failed]);
+  }, [webglMode]);
 
-  const handleFail = useCallback(() => {
-    setFailed(true);
+  const handleEngineFail = useCallback(() => {
+    setEngineFailures((n) => n + 1);
+    setFirstFrameMs(null);
+    setAttempt((prev) => {
+      if (prev < 2) {
+        // First failure: rebuild once with a fresh <canvas>.
+        return prev + 1;
+      }
+      setEngineFailed(true);
+      return prev;
+    });
   }, []);
 
-  const webglMode = eligible && !failed;
+  const handleRetry3d = useCallback(() => {
+    setEngineFailed(false);
+    setFirstFrameMs(null);
+    setAttempt(1);
+  }, []);
+
+  const handleContextLost = useCallback(() => {
+    setContextLostEvents((n) => n + 1);
+  }, []);
+
+  const handleFirstFrame = useCallback((ms: number) => {
+    setFirstFrameMs((prev) => (prev === null ? ms : prev));
+  }, []);
+
+  const canMountStage = webglMode && nearViewport && splineReady;
+  const effectiveReason = engineFailed ? 'engine-failed' : reason;
 
   return (
     <section
@@ -109,13 +125,36 @@ export function GlassSection() {
           : 'relative min-h-[100svh] overflow-hidden bg-glass-bg'
       }
     >
-      {webglMode && nearViewport ? (
+      {canMountStage ? (
         <Suspense fallback={<StaticGlass />}>
-          <LazyGlassStage active={nearViewport} paused={!onScreen || docHidden} onFail={handleFail} />
+          <LazyGlassStage
+            key={attempt}
+            active={canMountStage}
+            paused={!onScreen || docHidden}
+            onFirstFrame={handleFirstFrame}
+            onContextLost={handleContextLost}
+            onFail={handleEngineFail}
+          />
         </Suspense>
       ) : (
-        <StaticGlass />
+        <StaticGlass onRetry3d={engineFailed ? handleRetry3d : undefined} />
       )}
+
+      {debugEnabled ? (
+        <GlassDebugOverlay
+          telemetry={{
+            effectiveMode: webglMode ? 'webgl' : 'static',
+            reason: effectiveReason,
+            webglProbe,
+            firstFrameMs,
+            contextLostEvents,
+            engineFailures,
+            attempt,
+            splineReady,
+            lowPower,
+          }}
+        />
+      ) : null}
     </section>
   );
 }

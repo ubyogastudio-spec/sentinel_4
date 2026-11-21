@@ -6,8 +6,8 @@ import { buildCells, type CellName, type Pt } from './cutPattern';
 import {
   drawNavCanvas,
   drawPanelCanvas,
-  ensureGlassFonts,
   measureGlassLayout,
+  raceGlassFonts,
   type GlassCopy,
   type GlassHoverState,
   type GlassLayout,
@@ -34,12 +34,17 @@ interface ShardPiece {
 
 export interface GlassHeroOptions {
   readonly container: HTMLElement;
+  readonly eventRoot: HTMLElement;
   readonly panelLayerEl: HTMLElement;
   readonly navLayerEl: HTMLElement;
   readonly copy: GlassCopy;
   readonly locale: Locale;
+  readonly lowPower: boolean;
   readonly onLayoutChange: (layout: GlassLayout) => void;
   readonly onShatterStateChange: (state: 'assembled' | 'shattered') => void;
+  readonly onFirstFrame?: (ms: number) => void;
+  readonly onContextLost?: () => void;
+  readonly onContextRestored?: () => void;
   readonly onFail: () => void;
 }
 
@@ -64,7 +69,6 @@ function insetPolygon(pts: readonly THREE.Vector2[], inset: number): THREE.Vecto
     const e1 = new THREE.Vector2().subVectors(curr, prev).normalize();
     const e2 = new THREE.Vector2().subVectors(next, curr).normalize();
 
-    // Polygon vertices are clockwise in screen/panel coords -> inward normal is (-e.y, e.x) in world (X right, Y up)
     const n1 = new THREE.Vector2(e1.y, -e1.x);
     const n2 = new THREE.Vector2(e2.y, -e2.x);
 
@@ -105,7 +109,19 @@ function buildRoundedShape(pts: readonly THREE.Vector2[], radius: number): THREE
 }
 
 export async function createGlassHero(options: GlassHeroOptions): Promise<GlassHeroController> {
-  const { container, panelLayerEl, navLayerEl, onLayoutChange, onShatterStateChange, onFail } = options;
+  const {
+    container,
+    eventRoot,
+    panelLayerEl,
+    navLayerEl,
+    lowPower,
+    onLayoutChange,
+    onShatterStateChange,
+    onFirstFrame,
+    onContextLost: notifyContextLost,
+    onContextRestored: notifyContextRestored,
+    onFail,
+  } = options;
 
   let activeCopy = options.copy;
   let activeLocale = options.locale;
@@ -114,6 +130,11 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
   let rafId = 0;
   let firstFrameDrawn = false;
   let contextLost = false;
+  let contextLostGraceTimer: number | null = null;
+  let activeVisibleWaitMs = 0;
+  let stallCheckTimer: number | null = null;
+  let lastStallPoll = performance.now();
+  const startTimeMs = performance.now();
 
   const canvas = document.createElement('canvas');
   canvas.style.position = 'absolute';
@@ -137,11 +158,13 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#050507');
 
+  const roomEnv = new RoomEnvironment();
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const envTarget = pmrem.fromScene(new RoomEnvironment(), 0.04);
+  const envTarget = pmrem.fromScene(roomEnv, 0.04);
+  roomEnv.dispose();
+  pmrem.dispose();
   scene.environment = envTarget.texture;
   scene.environmentIntensity = 0.42;
-  pmrem.dispose();
 
   const keyLight = new THREE.DirectionalLight('#dceaff', 1.65);
   keyLight.position.set(-600, 700, 900);
@@ -156,11 +179,12 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
   const rootGroup = new THREE.Group();
   scene.add(rootGroup);
 
-  // Offscreen textures for nav slab and shard panel
   const navCanvas = document.createElement('canvas');
   const panelCanvas = document.createElement('canvas');
   const measureCtx = panelCanvas.getContext('2d');
   if (!measureCtx) {
+    renderer.dispose();
+    if (canvas.parentNode === container) container.removeChild(canvas);
     onFail();
     throw new Error('2D canvas unavailable');
   }
@@ -175,27 +199,13 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
   panelTexture.minFilter = THREE.LinearFilter;
   panelTexture.magFilter = THREE.LinearFilter;
 
-  // Shared cursor glow uniforms injected into MeshPhysicalMaterial
   const glowUniforms = {
     uCursorWorld: { value: new THREE.Vector3(0, 0, 0) },
     uCursorActive: { value: 0 },
     uCursorRadius: { value: 300 },
   };
 
-  const glassMaterialBase = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color('#17171b'),
-    roughness: 0.36,
-    metalness: 0.05,
-    clearcoat: 0.7,
-    clearcoatRoughness: 0.12,
-    specularIntensity: 0.7,
-    iridescence: 0.55,
-    iridescenceIOR: 1.3,
-    iridescenceThicknessRange: [250, 650],
-    envMapIntensity: 1.0,
-  });
-
-  glassMaterialBase.onBeforeCompile = (shader) => {
+  const applyCursorGlowShader = (shader: THREE.WebGLProgramParametersWithUniforms) => {
     shader.uniforms.uCursorWorld = glowUniforms.uCursorWorld;
     shader.uniforms.uCursorActive = glowUniforms.uCursorActive;
     shader.uniforms.uCursorRadius = glowUniforms.uCursorRadius;
@@ -230,11 +240,26 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
       );
   };
 
+  const glassMaterialBase = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color('#17171b'),
+    roughness: 0.36,
+    metalness: 0.05,
+    clearcoat: 0.7,
+    clearcoatRoughness: 0.12,
+    specularIntensity: 0.7,
+    iridescence: 0.55,
+    iridescenceIOR: 1.3,
+    iridescenceThicknessRange: [250, 650],
+    envMapIntensity: 1.0,
+  });
+  glassMaterialBase.onBeforeCompile = applyCursorGlowShader;
+  glassMaterialBase.customProgramCacheKey = () => 'sentinel-glass-glow-v1';
+
   const navFaceMat = new THREE.MeshBasicMaterial({ map: navTexture, transparent: true, depthWrite: false });
   const panelFaceMat = new THREE.MeshBasicMaterial({ map: panelTexture, transparent: true, depthWrite: false });
 
-  let sectionW = Math.max(900, container.clientWidth);
-  let sectionH = Math.max(600, container.clientHeight);
+  let sectionW = Math.max(320, container.clientWidth);
+  let sectionH = Math.max(400, container.clientHeight);
   let layout: GlassLayout = measureGlassLayout(measureCtx, sectionW, sectionH, activeCopy, activeLocale);
 
   const hoverState: GlassHoverState = {
@@ -250,7 +275,8 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
   const createPiece = (name: string, index: number, matFace: THREE.MeshBasicMaterial): ShardPiece => {
     const group = new THREE.Group();
     const mat = glassMaterialBase.clone();
-    mat.onBeforeCompile = glassMaterialBase.onBeforeCompile;
+    mat.onBeforeCompile = applyCursorGlowShader;
+    mat.customProgramCacheKey = () => 'sentinel-glass-glow-v1';
     const glassMesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
     glassMesh.userData.pieceIndex = index;
     const faceMesh = new THREE.Mesh(new THREE.BufferGeometry(), matFace);
@@ -277,10 +303,10 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
   CELL_NAMES.forEach((cellName, i) => pieces.push(createPiece(cellName, i + 1, panelFaceMat)));
 
   let pointerInside = false;
-  let pointerNdc = new THREE.Vector2(0, 0);
+  const pointerNdc = new THREE.Vector2(0, 0);
   let pointerPanelNorm: Pt | null = null;
   let hoveredPieceIndex = -1;
-  let hoveredLocalPoint = new THREE.Vector3();
+  const hoveredLocalPoint = new THREE.Vector3();
   let glowStrength = 0;
 
   let tiltX = 0.8 * (Math.PI / 180);
@@ -290,6 +316,7 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
   let phaseElapsed = 0;
   let shatterTime = 0;
   let lastGeoRebuild = -1;
+  const rebuildInterval = lowPower ? 1 / 30 : 1 / 45;
 
   const raycaster = new THREE.Raycaster();
   const rayPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
@@ -306,9 +333,9 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
   const rebuildNavGeometry = () => {
     const navPiece = pieces[0];
     const S = layout.scale;
-    const depth = Math.max(4, 13 * S);
-    const bevel = Math.max(1, 2.6 * S);
-    const radius = Math.max(4, 20 * S);
+    const depth = Math.max(1, 13 * S);
+    const bevel = Math.max(0.5, 2.6 * S);
+    const radius = Math.max(2, 20 * S);
     const w = layout.panelW;
     const h = layout.navH;
 
@@ -344,19 +371,19 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
     faceGeo.translate(0, 0, depth + bevel + 0.6);
     navPiece.faceMesh.geometry = faceGeo;
 
-    const navCenterY = layout.blockH / 2 - layout.navH / 2;
+    const navCenterY = layout.blockOffsetY + (layout.blockH / 2 - layout.navH / 2);
     navPiece.basePosition.set(0, navCenterY, -depth * 0.5);
     navPiece.flight = createPieceFlight(0, S, new THREE.Vector2(0, 0.8));
   };
 
   const rebuildCellGeometries = (time: number) => {
     const S = layout.scale;
-    const depth = Math.max(4, 13 * S);
-    const bevel = Math.max(1, 2.6 * S);
-    const radius = Math.max(4, 20 * S);
-    const halfGap = Math.max(3.5, 7 * S);
-    const { panelW, panelH, navH, navGap, blockH } = layout;
-    const panelCenterY = -( -blockH / 2 + navH + navGap + panelH / 2 );
+    const depth = Math.max(1, 13 * S);
+    const bevel = Math.max(0.5, 2.6 * S);
+    const radius = Math.max(2, 20 * S);
+    const halfGap = Math.max(1.2, 7 * S);
+    const { panelW, panelH, navH, navGap, blockH, blockOffsetY } = layout;
+    const panelCenterY = blockOffsetY + (blockH / 2 - navH - navGap - panelH / 2);
     const portrait = sectionH > sectionW;
     const cells = buildCells(time, pointerPanelNorm, portrait);
 
@@ -364,12 +391,10 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
       const piece = pieces[idx + 1];
       const normPoly = cells[cellName];
 
-      // Convert normalised [0..1] (x right, y down) to panel-local world coords (x right, y up)
       const worldPts = normPoly.map(
         ([nx, ny]) => new THREE.Vector2((nx - 0.5) * panelW, (0.5 - ny) * panelH),
       );
 
-      // Compute centroid in local panel space
       const centroid = new THREE.Vector2();
       worldPts.forEach((p) => centroid.add(p));
       centroid.divideScalar(worldPts.length);
@@ -410,16 +435,16 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
     });
   };
 
-  const handleResize = () => {
+  const applyLayoutAndSize = () => {
     if (disposed) return;
-    sectionW = Math.max(320, container.clientWidth);
-    sectionH = Math.max(400, container.clientHeight);
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    sectionW = Math.max(300, container.clientWidth || window.innerWidth);
+    sectionH = Math.max(400, container.clientHeight || window.innerHeight);
+    const dpr = Math.min(window.devicePixelRatio || 1, lowPower ? 1.25 : 2);
     renderer.setPixelRatio(dpr);
     renderer.setSize(sectionW, sectionH, false);
 
     camera.aspect = sectionW / sectionH;
-    camera.position.z = sectionH / (2 * Math.tan(THREE.MathUtils.degToRad(fov / 2)));
+    camera.position.z = (sectionH / 2) / Math.tan(THREE.MathUtils.degToRad(fov / 2));
     camera.updateProjectionMatrix();
 
     layout = measureGlassLayout(measureCtx, sectionW, sectionH, activeCopy, activeLocale);
@@ -431,7 +456,7 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
     backSliver.resize(sectionW, sectionH);
   };
 
-  const onPointerMove = (e: PointerEvent) => {
+  const updatePointerFromEvent = (e: PointerEvent) => {
     const rect = container.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
     pointerInside = true;
@@ -439,43 +464,80 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
     const ny = (e.clientY - rect.top) / rect.height;
     pointerNdc.set(nx * 2 - 1, -(ny * 2 - 1));
 
-    // Normalised coords within the shard panel for cell push
-    const sideMargin = rect.width * 0.055;
-    const topMargin = Math.max(rect.height * 0.085, 88);
-    const panelLeft = sideMargin;
-    const panelTop = topMargin + layout.navH + layout.navGap;
+    const panelLeft = layout.sideMargin;
+    const panelTop = layout.topMargin + layout.navH + layout.navGap;
     const pnx = THREE.MathUtils.clamp((e.clientX - rect.left - panelLeft) / layout.panelW, 0, 1);
     const pny = THREE.MathUtils.clamp((e.clientY - rect.top - panelTop) / layout.panelH, 0, 1);
     pointerPanelNorm = [pnx, pny];
   };
 
-  const onPointerLeave = () => {
+  const resetPointer = () => {
     pointerInside = false;
     pointerPanelNorm = null;
     hoveredPieceIndex = -1;
   };
 
-  const onContextLost = (e: Event) => {
-    e.preventDefault();
-    contextLost = true;
-    onFail();
+  const onPointerDown = (e: PointerEvent) => {
+    updatePointerFromEvent(e);
   };
 
-  container.addEventListener('pointermove', onPointerMove, { passive: true });
-  container.addEventListener('pointerleave', onPointerLeave);
-  canvas.addEventListener('webglcontextlost', onContextLost);
-  window.addEventListener('resize', handleResize);
+  const onPointerMove = (e: PointerEvent) => {
+    updatePointerFromEvent(e);
+  };
 
-  // Stall timer: 8 seconds for first frame
-  const stallTimer = window.setTimeout(() => {
-    if (!firstFrameDrawn && !disposed) {
+  const onPointerUp = (e: PointerEvent) => {
+    if (e.pointerType !== 'mouse') {
+      resetPointer();
+    }
+  };
+
+  const onPointerCancel = () => {
+    resetPointer();
+  };
+
+  const onPointerLeave = () => {
+    resetPointer();
+  };
+
+  const onContextLost = (e: Event) => {
+    e.preventDefault();
+    if (disposed) return;
+    contextLost = true;
+    notifyContextLost?.();
+    if (contextLostGraceTimer !== null) {
+      window.clearTimeout(contextLostGraceTimer);
+    }
+    // Wait up to 3 s for webglcontextrestored; otherwise trigger one rebuild
+    contextLostGraceTimer = window.setTimeout(() => {
+      contextLostGraceTimer = null;
+      if (!disposed) onFail();
+    }, 3000);
+  };
+
+  const onContextRestored = () => {
+    if (contextLostGraceTimer !== null) {
+      window.clearTimeout(contextLostGraceTimer);
+      contextLostGraceTimer = null;
+    }
+    notifyContextRestored?.();
+    if (!disposed) {
+      // Rebuild cleanly with a fresh canvas on restore
       onFail();
     }
-  }, 8000);
+  };
 
-  await ensureGlassFonts();
+  eventRoot.addEventListener('pointerdown', onPointerDown, { passive: true });
+  eventRoot.addEventListener('pointermove', onPointerMove, { passive: true });
+  eventRoot.addEventListener('pointerup', onPointerUp, { passive: true });
+  eventRoot.addEventListener('pointercancel', onPointerCancel, { passive: true });
+  eventRoot.addEventListener('pointerleave', onPointerLeave);
+  canvas.addEventListener('webglcontextlost', onContextLost);
+  canvas.addEventListener('webglcontextrestored', onContextRestored);
+  window.addEventListener('resize', applyLayoutAndSize);
+
+  // Fonts never block the engine: race against 1500 ms and redraw when fonts settle.
+  const loadedInTime = await raceGlassFonts(1500);
   if (disposed) {
-    window.clearTimeout(stallTimer);
     return {
       setCopy: () => {},
       setDomHover: () => {},
@@ -487,7 +549,16 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
     };
   }
 
-  handleResize();
+  if (!loadedInTime && typeof document !== 'undefined' && 'fonts' in document) {
+    void document.fonts.ready.then(() => {
+      if (disposed) return;
+      layout = measureGlassLayout(measureCtx, sectionW, sectionH, activeCopy, activeLocale);
+      onLayoutChange(layout);
+      rebuildTextures();
+    });
+  }
+
+  applyLayoutAndSize();
 
   let prevTime = performance.now();
   let totalTime = 0;
@@ -503,7 +574,6 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
     totalTime += dt;
     phaseElapsed += dt;
 
-    // Phase transitions
     if (phase === 'entering' && phaseElapsed >= SHATTER_DURATION + pieces.length * 0.03) {
       phase = 'assembled';
       onShatterStateChange('assembled');
@@ -515,7 +585,6 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
       onShatterStateChange('assembled');
     }
 
-    // Global tilt toward pointer
     const targetTiltY = pointerInside
       ? (pointerNdc.x * 7 - 1.2) * (Math.PI / 180)
       : -1.2 * (Math.PI / 180);
@@ -527,7 +596,6 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
     tiltY = expSmooth(tiltY, targetTiltY, dt, 0.3);
     rootGroup.rotation.set(tiltX, tiltY, 0);
 
-    // Cursor glow & raycasting when assembled
     glowStrength = expSmooth(glowStrength, pointerInside && phase === 'assembled' ? 1 : 0, dt, 0.18);
     glowUniforms.uCursorActive.value = glowStrength;
 
@@ -551,14 +619,15 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
       hoveredPieceIndex = -1;
     }
 
-    // Rebuild cell geometries ~45x/s while assembled
-    if (phase === 'assembled' && totalTime - lastGeoRebuild >= 1 / 45) {
+    if (phase === 'assembled' && totalTime - lastGeoRebuild >= rebuildInterval) {
       lastGeoRebuild = totalTime;
       rebuildCellGeometries(totalTime);
     }
 
     const S = layout.scale;
-    const zTop = Math.max(4, 13 * S) * 0.5 + Math.max(1, 2.6 * S) + 0.6;
+    const depth = Math.max(1, 13 * S);
+    const bevel = Math.max(0.5, 2.6 * S);
+    const zTop = depth * 0.5 + bevel + 0.6;
 
     pieces.forEach((piece, idx) => {
       const isHovered = phase === 'assembled' && idx === hoveredPieceIndex;
@@ -569,8 +638,8 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
       if (isHovered) {
         const halfW = idx === 0 ? layout.panelW * 0.5 : layout.panelW * 0.28;
         const halfH = idx === 0 ? layout.navH * 0.5 : layout.panelH * 0.28;
-        targetTipY = THREE.MathUtils.clamp((hoveredLocalPoint.x / Math.max(60, halfW)) * 0.24, -0.24, 0.24);
-        targetTipX = THREE.MathUtils.clamp((-hoveredLocalPoint.y / Math.max(60, halfH)) * 0.24, -0.24, 0.24);
+        targetTipY = THREE.MathUtils.clamp((hoveredLocalPoint.x / Math.max(40, halfW)) * 0.24, -0.24, 0.24);
+        targetTipX = THREE.MathUtils.clamp((-hoveredLocalPoint.y / Math.max(40, halfH)) * 0.24, -0.24, 0.24);
       }
 
       const lift = stepSpring(piece.liftSpring, targetLift, dt, 170, 19);
@@ -594,13 +663,11 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
       );
     });
 
-    // Update Back sliver
     const sliverVisible = phase === 'shattering' || phase === 'shattered';
     if (sliverVisible) shatterTime += dt;
     else shatterTime = 0;
     backSliver.update(totalTime, dt, sliverVisible, shatterTime, pointerInside ? pointerNdc : null, raycaster, camera);
 
-    // Project panel & nav layers with homography when visible
     if (phase !== 'shattered') {
       const panelCorners = projectPanelCorners(rootGroup, camera, layout, sectionW, sectionH, zTop);
       panelLayerEl.style.transform = computePanelMatrix3d(layout.panelW, layout.panelH, panelCorners);
@@ -613,23 +680,43 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
 
     if (!firstFrameDrawn) {
       firstFrameDrawn = true;
-      window.clearTimeout(stallTimer);
+      if (stallCheckTimer !== null) {
+        window.clearInterval(stallCheckTimer);
+        stallCheckTimer = null;
+      }
+      onFirstFrame?.(Math.round(performance.now() - startTimeMs));
     }
   };
 
-  rafId = requestAnimationFrame(tick);
+  // Start the stall watcher only after the first RAF is scheduled, counting only active visible time.
+  lastStallPoll = performance.now();
+  stallCheckTimer = window.setInterval(() => {
+    const now = performance.now();
+    if (!paused && !document.hidden && !firstFrameDrawn && !contextLost) {
+      activeVisibleWaitMs += now - lastStallPoll;
+      if (activeVisibleWaitMs >= 15000) {
+        if (stallCheckTimer !== null) {
+          window.clearInterval(stallCheckTimer);
+          stallCheckTimer = null;
+        }
+        if (!disposed) onFail();
+      }
+    }
+    lastStallPoll = now;
+  }, 500);
+
+  if (!paused && !contextLost) {
+    rafId = requestAnimationFrame(tick);
+  }
 
   return {
     setCopy(nextCopy, nextLocale) {
       if (disposed) return;
       activeCopy = nextCopy;
       activeLocale = nextLocale;
-      void ensureGlassFonts().then(() => {
-        if (disposed) return;
-        layout = measureGlassLayout(measureCtx, sectionW, sectionH, activeCopy, activeLocale);
-        onLayoutChange(layout);
-        rebuildTextures();
-      });
+      layout = measureGlassLayout(measureCtx, sectionW, sectionH, activeCopy, activeLocale);
+      onLayoutChange(layout);
+      rebuildTextures();
     },
     setDomHover(patch) {
       if (disposed) return;
@@ -656,17 +743,30 @@ export async function createGlassHero(options: GlassHeroOptions): Promise<GlassH
       if (!paused || disposed || contextLost) return;
       paused = false;
       prevTime = performance.now();
+      lastStallPoll = prevTime;
       rafId = requestAnimationFrame(tick);
     },
     dispose() {
       if (disposed) return;
       disposed = true;
-      window.clearTimeout(stallTimer);
+      if (stallCheckTimer !== null) {
+        window.clearInterval(stallCheckTimer);
+        stallCheckTimer = null;
+      }
+      if (contextLostGraceTimer !== null) {
+        window.clearTimeout(contextLostGraceTimer);
+        contextLostGraceTimer = null;
+      }
       cancelAnimationFrame(rafId);
-      container.removeEventListener('pointermove', onPointerMove);
-      container.removeEventListener('pointerleave', onPointerLeave);
+
+      eventRoot.removeEventListener('pointerdown', onPointerDown);
+      eventRoot.removeEventListener('pointermove', onPointerMove);
+      eventRoot.removeEventListener('pointerup', onPointerUp);
+      eventRoot.removeEventListener('pointercancel', onPointerCancel);
+      eventRoot.removeEventListener('pointerleave', onPointerLeave);
       canvas.removeEventListener('webglcontextlost', onContextLost);
-      window.removeEventListener('resize', handleResize);
+      canvas.removeEventListener('webglcontextrestored', onContextRestored);
+      window.removeEventListener('resize', applyLayoutAndSize);
 
       pieces.forEach((piece) => {
         piece.glassMesh.geometry.dispose();

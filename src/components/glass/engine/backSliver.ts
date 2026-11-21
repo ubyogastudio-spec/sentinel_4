@@ -22,9 +22,17 @@ const SLIVER_FRACTIONS: readonly [number, number][] = [
   [0.151, 0.258],
 ];
 
+function sliverAnchor(width: number): { fx: number; fy: number } {
+  // Desktop (<900px uses compact top-left slot matching mobile CSS .glass-back-btn)
+  return width < 900 ? { fx: 0.24, fy: 0.12 } : { fx: 0.219, fy: 0.238 };
+}
+
 function buildSliverGeometry(width: number, height: number): THREE.ExtrudeGeometry {
-  const k = width / 1918;
-  const pts = SLIVER_FRACTIONS.map(([fx, fy]) => new THREE.Vector2((fx - 0.219) * width, (0.238 - fy) * height));
+  const effectiveW = Math.max(width, 640);
+  const k = effectiveW / 1918;
+  const pts = SLIVER_FRACTIONS.map(
+    ([fx, fy]) => new THREE.Vector2((fx - 0.219) * effectiveW, (0.238 - fy) * height),
+  );
 
   const shape = new THREE.Shape();
   const radius = Math.max(4, 14 * k);
@@ -51,10 +59,10 @@ function buildSliverGeometry(width: number, height: number): THREE.ExtrudeGeomet
   shape.closePath();
 
   const geo = new THREE.ExtrudeGeometry(shape, {
-    depth: Math.max(4, 11 * k),
+    depth: Math.max(3, 11 * k),
     bevelEnabled: true,
-    bevelThickness: Math.max(1, 2.2 * k),
-    bevelSize: Math.max(1, 2.2 * k),
+    bevelThickness: Math.max(0.8, 2.2 * k),
+    bevelSize: Math.max(0.8, 2.2 * k),
     bevelSegments: 3,
     curveSegments: 8,
   });
@@ -76,8 +84,9 @@ export function createBackSliver(width: number, height: number): BackSliverContr
     envMapIntensity: 1.15,
   });
 
+  const anchor = sliverAnchor(width);
   const mesh = new THREE.Mesh(buildSliverGeometry(width, height), material);
-  mesh.position.set((0.219 - 0.5) * width, (0.5 - 0.238) * height, 40);
+  mesh.position.set((anchor.fx - 0.5) * width, (0.5 - anchor.fy) * height, 40);
   mesh.scale.setScalar(0.001);
   mesh.visible = false;
 
@@ -126,9 +135,10 @@ export function createBackSliver(width: number, height: number): BackSliverContr
       return hovered;
     },
     resize(nextW, nextH) {
+      const nextAnchor = sliverAnchor(nextW);
       mesh.geometry.dispose();
       mesh.geometry = buildSliverGeometry(nextW, nextH);
-      mesh.position.set((0.219 - 0.5) * nextW, (0.5 - 0.238) * nextH, 40);
+      mesh.position.set((nextAnchor.fx - 0.5) * nextW, (0.5 - nextAnchor.fy) * nextH, 40);
     },
     dispose() {
       mesh.geometry.dispose();

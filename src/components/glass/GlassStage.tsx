@@ -2,17 +2,27 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from '@/i18n/format';
 import { useLocale } from '@/i18n/LocaleProvider';
+import { isGlassLowPower } from '@/lib/device';
 import type { GlassHeroController } from './engine/createGlassHero';
 import type { GlassCopy, GlassLayout } from './engine/pageCanvas';
 
 interface GlassStageProps {
   readonly active: boolean;
   readonly paused: boolean;
+  readonly onFirstFrame?: (ms: number) => void;
+  readonly onContextLost?: () => void;
   readonly onFail: () => void;
 }
 
-export function GlassStage({ active, paused, onFail }: GlassStageProps) {
+export function GlassStage({
+  active,
+  paused,
+  onFirstFrame,
+  onContextLost,
+  onFail,
+}: GlassStageProps) {
   const { locale, t } = useLocale();
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const panelLayerRef = useRef<HTMLDivElement | null>(null);
   const navLayerRef = useRef<HTMLDivElement | null>(null);
@@ -45,15 +55,25 @@ export function GlassStage({ active, paused, onFail }: GlassStageProps) {
 
   const copyRef = useRef(glassCopy);
   const localeRef = useRef(locale);
+  const pausedRef = useRef(paused);
+  const onFirstFrameRef = useRef(onFirstFrame);
+  const onContextLostRef = useRef(onContextLost);
+  const onFailRef = useRef(onFail);
+
   copyRef.current = glassCopy;
   localeRef.current = locale;
+  pausedRef.current = paused;
+  onFirstFrameRef.current = onFirstFrame;
+  onContextLostRef.current = onContextLost;
+  onFailRef.current = onFail;
 
   useEffect(() => {
     if (!active) return;
+    const eventRoot = stageRef.current;
     const container = containerRef.current;
     const panelLayer = panelLayerRef.current;
     const navLayer = navLayerRef.current;
-    if (!container || !panelLayer || !navLayer) return;
+    if (!eventRoot || !container || !panelLayer || !navLayer) return;
 
     let cancelled = false;
     let instance: GlassHeroController | null = null;
@@ -63,16 +83,24 @@ export function GlassStage({ active, paused, onFail }: GlassStageProps) {
         if (cancelled) return null;
         return createGlassHero({
           container,
+          eventRoot,
           panelLayerEl: panelLayer,
           navLayerEl: navLayer,
           copy: copyRef.current,
           locale: localeRef.current,
+          lowPower: isGlassLowPower(),
           onLayoutChange: (nextLayout) => {
             if (!cancelled) setLayout(nextLayout);
           },
           onShatterStateChange: () => {},
+          onFirstFrame: (ms) => {
+            if (!cancelled) onFirstFrameRef.current?.(ms);
+          },
+          onContextLost: () => {
+            if (!cancelled) onContextLostRef.current?.();
+          },
           onFail: () => {
-            if (!cancelled) onFail();
+            if (!cancelled) onFailRef.current();
           },
         });
       })
@@ -84,9 +112,10 @@ export function GlassStage({ active, paused, onFail }: GlassStageProps) {
         }
         instance = ctrl;
         controllerRef.current = ctrl;
+        if (pausedRef.current) ctrl.pause();
       })
       .catch(() => {
-        if (!cancelled) onFail();
+        if (!cancelled) onFailRef.current();
       });
 
     return () => {
@@ -97,7 +126,7 @@ export function GlassStage({ active, paused, onFail }: GlassStageProps) {
       }
       controllerRef.current = null;
     };
-  }, [active, onFail]);
+  }, [active]);
 
   useEffect(() => {
     controllerRef.current?.setCopy(glassCopy, locale);
@@ -159,7 +188,10 @@ export function GlassStage({ active, paused, onFail }: GlassStageProps) {
   };
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-glass-bg">
+    <div
+      ref={stageRef}
+      className="relative h-full w-full overflow-hidden bg-glass-bg touch-pan-y"
+    >
       <div ref={containerRef} className="absolute inset-0" />
 
       {/* Transparent projected DOM layer for real links, selection, and keyboard focus */}
@@ -189,22 +221,24 @@ export function GlassStage({ active, paused, onFail }: GlassStageProps) {
               >
                 {glassCopy.navBrand}
               </Link>
-              {[
-                { to: '/services', label: glassCopy.navServices, rect: layout.navItemRects[0], idx: 0 },
-                { to: '/products', label: glassCopy.navProducts, rect: layout.navItemRects[1], idx: 1 },
-                { to: '/projects', label: glassCopy.navProjects, rect: layout.navItemRects[2], idx: 2 },
-              ].map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className="glass-dom-interactive"
-                  style={hitBoxStyle(item.rect)}
-                  onMouseEnter={() => controllerRef.current?.setDomHover({ navHoveredIndex: item.idx })}
-                  onMouseLeave={() => controllerRef.current?.setDomHover({ navHoveredIndex: -1 })}
-                >
-                  {item.label}
-                </Link>
-              ))}
+              {layout.showNavItems
+                ? [
+                    { to: '/services', label: glassCopy.navServices, rect: layout.navItemRects[0], idx: 0 },
+                    { to: '/products', label: glassCopy.navProducts, rect: layout.navItemRects[1], idx: 1 },
+                    { to: '/projects', label: glassCopy.navProjects, rect: layout.navItemRects[2], idx: 2 },
+                  ].map((item) => (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className="glass-dom-interactive"
+                      style={hitBoxStyle(item.rect)}
+                      onMouseEnter={() => controllerRef.current?.setDomHover({ navHoveredIndex: item.idx })}
+                      onMouseLeave={() => controllerRef.current?.setDomHover({ navHoveredIndex: -1 })}
+                    >
+                      {item.label}
+                    </Link>
+                  ))
+                : null}
               <Link
                 to="/quote"
                 className="glass-dom-interactive"

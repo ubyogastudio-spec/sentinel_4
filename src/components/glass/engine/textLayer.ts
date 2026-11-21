@@ -10,11 +10,11 @@ export function projectPanelCorners(
   sectionH: number,
   zTop: number,
 ): [Point2D, Point2D, Point2D, Point2D] {
-  const { panelW, panelH, navH, navGap, blockH } = layout;
-  const panelCenterY = -blockH / 2 + navH + navGap + panelH / 2;
-  // Convert top-down DOM corners to Three.js world coordinates (Y up)
-  const topY = -(panelCenterY - panelH / 2);
-  const botY = -(panelCenterY + panelH / 2);
+  const { panelW, panelH, navH, navGap, blockH, blockOffsetY } = layout;
+  // Center of panel in world Y-up coordinates
+  const panelCenterWorldY = blockOffsetY + (blockH / 2 - navH - navGap - panelH / 2);
+  const topY = panelCenterWorldY + panelH / 2;
+  const botY = panelCenterWorldY - panelH / 2;
   const leftX = -panelW / 2;
   const rightX = panelW / 2;
 
@@ -46,10 +46,10 @@ export function projectNavCorners(
   sectionH: number,
   zTop: number,
 ): [Point2D, Point2D, Point2D, Point2D] {
-  const { panelW, navH, blockH } = layout;
-  const navCenterY = -blockH / 2 + navH / 2;
-  const topY = -(navCenterY - navH / 2);
-  const botY = -(navCenterY + navH / 2);
+  const { panelW, navH, blockH, blockOffsetY } = layout;
+  const navCenterWorldY = blockOffsetY + (blockH / 2 - navH / 2);
+  const topY = navCenterWorldY + navH / 2;
+  const botY = navCenterWorldY - navH / 2;
   const leftX = -panelW / 2;
   const rightX = panelW / 2;
 

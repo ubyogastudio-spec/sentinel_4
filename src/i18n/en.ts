@@ -71,6 +71,7 @@ export const en = {
     open: 'See the system',
     read: 'Read the principles →',
     back: '← Back',
+    try3d: 'Try 3D again',
     copyLeft: '© {year} SENTINEL AI',
     copyRight: 'Zero-trust architecture',
     navBrand: 'SENTINEL AI',

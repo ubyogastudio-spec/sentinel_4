@@ -67,6 +67,7 @@ export const mn: Messages = {
     open: 'Системийг үзэх',
     read: 'Зарчмуудыг унших →',
     back: '← Буцах',
+    try3d: '3D-г дахин оролдох',
     copyLeft: '© {year} SENTINEL AI',
     copyRight: 'Zero-trust архитектур',
     navBrand: 'SENTINEL AI',
